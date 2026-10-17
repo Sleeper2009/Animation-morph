@@ -8,6 +8,8 @@ typedef struct {
     double dur, speed;                         // thời lượng (s), hệ số tốc độ (<1 = chậm)
     BOOL useGlass;                             // thử UIGlassEffect (iOS 26) trước khi dùng blur thường
     BOOL debug;                                // ghi log NSLog
+    BOOL coverButton;                          // dời menu thật lên đè nút (giống bản Flutter); NO = giữ chỗ hệ thống
+    BOOL hideSource;                           // ẩn nút gốc trong lúc morph (trả lại khi xong)
 } LGParams;
 
 extern LGParams LGP;
@@ -17,8 +19,9 @@ extern LGParams LGP;
 void LGParamsFinalize(void);
 
 @interface LGMenuMorph : NSObject
-/// body: view thân menu (đang hiển thị), content: view chứa chữ/icon, src: khung nút nguồn (toạ độ của body.superview)
-+ (void)runForBody:(UIView *)body content:(UIView *)content source:(CGRect)src done:(void (^)(void))done;
-/// Kết thúc ngay morph đang chạy (nếu có): hiện lại menu thật, gỡ vỏ kính.
+/// body: view thân menu (đang hiển thị), content: view chứa chữ/icon, src: khung nút nguồn (toạ độ của body.superview),
+/// sourceView: view nút nguồn nếu biết (để ẩn trong lúc morph), nil nếu src chỉ là ô ước lượng quanh chỗ chạm
++ (void)runForBody:(UIView *)body content:(UIView *)content source:(CGRect)src sourceView:(UIView *)sourceView done:(void (^)(void))done;
+/// Kết thúc ngay morph đang chạy (nếu có): hiện lại menu thật, gỡ vỏ kính, trả lại nút gốc.
 + (void)cancelActive;
 @end
