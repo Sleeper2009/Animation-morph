@@ -82,12 +82,16 @@ static void LGHandle(UIView *container, int attempt) {
     UIView *host = body.superview;
     UIView *s = gSource;
     CGRect src = CGRectZero;
-    if (s.window) src = [s convertRect:s.bounds toView:host];
-    if (CGRectIsEmpty(src) || src.size.width > 120 || src.size.height > 120)
-        src = [host convertRect:CGRectMake(gTouch.x - 22, gTouch.y - 22, 44, 44) fromView:nil];
-    if (gDebug) NSLog(@"[LiquidMenu] morph container=%s body=%s %@ content=%s src=%@", object_getClassName(container),
-                      object_getClassName(body), NSStringFromCGRect(body.frame), object_getClassName(content), NSStringFromCGRect(src));
-    [LGMenuMorph runForBody:body content:content source:src done:^{
+    BOOL fromView = NO;      // src lấy từ khung của nút thật (true) hay chỉ là ô ước lượng quanh chỗ chạm (false)
+    if (s.window) {
+        src = [s convertRect:s.bounds toView:host];
+        fromView = !(CGRectIsEmpty(src) || src.size.width > 120 || src.size.height > 120);
+    }
+    if (!fromView) src = [host convertRect:CGRectMake(gTouch.x - 22, gTouch.y - 22, 44, 44) fromView:nil];
+    if (gDebug) NSLog(@"[LiquidMenu] morph container=%s body=%s %@ content=%s src=%@ (%@)", object_getClassName(container),
+                      object_getClassName(body), NSStringFromCGRect(body.frame), object_getClassName(content), NSStringFromCGRect(src),
+                      fromView ? @"khung nút thật" : @"ô ước lượng quanh chỗ chạm");
+    [LGMenuMorph runForBody:body content:content source:src sourceView:(fromView ? s : nil) done:^{
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 200 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{ gBusy = NO; });
     }];
 }
@@ -114,8 +118,11 @@ static void LGHandle(UIView *container, int attempt) {
 %hook UIView
 - (void)didMoveToWindow {
     %orig;
-    if (!gEnabled || !self.window || CACurrentMediaTime() - gSourceT > 1.5) return;
+    if (!gEnabled) return;
     const char *n = object_getClassName(self);
+    // debug: ghi lại view của menu bị gỡ khỏi window (để biết lúc nào menu đóng xong)
+    if (gDebug && !self.window && LGMatchName(n)) NSLog(@"[LiquidMenu] -%s (bị gỡ khỏi window)", n);
+    if (!self.window || CACurrentMediaTime() - gSourceT > 1.5) return;
     if (gDebug) NSLog(@"[LiquidMenu] +%s frame=%@ window=%s", n, NSStringFromCGRect(self.frame), object_getClassName(self.window));
     if (gBusy || !LGMatchName(n)) return;
     gBusy = YES;
@@ -149,6 +156,8 @@ static BOOL LGBoolOf(id v, BOOL def) { return [v respondsToSelector:@selector(bo
         LGNUM(@"dotOmega", dotOmega) LGNUM(@"dotDelay", dotDelay) LGNUM(@"radOmega", radOmega)
         LGNUM(@"radDelay", radDelay) LGNUM(@"blend", blend) LGNUM(@"speed", speed)
         LGP.useGlass = LGBoolOf(p[@"useGlass"], LGP.useGlass);
+        LGP.coverButton = LGBoolOf(p[@"coverButton"], LGP.coverButton);
+        LGP.hideSource = LGBoolOf(p[@"hideSource"], LGP.hideSource);
         LGParamsFinalize();
     }
 }
