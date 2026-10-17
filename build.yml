@@ -1,0 +1,81 @@
+name: Build .deb
+
+on:
+  push:
+    branches: [main, master]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build (${{ matrix.name }})
+    runs-on: macos-latest   # Theos cần Xcode đầy đủ nên phải là runner macOS
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # rootless: Dopamine, palera1n rootless...  |  rootful: checkra1n, unc0ver, Taurine...
+          - { name: rootless, scheme: "rootless", arch: iphoneos-arm64 }
+          - { name: rootful,  scheme: "",         arch: iphoneos-arm }
+    steps:
+      - uses: actions/checkout@v4
+
+      # Cho phép upload cả thư mục LiquidMenu/ lồng bên trong repo: lấy thư mục chứa Makefile
+      - name: Tìm thư mục project
+        run: |
+          MK=$(find . -maxdepth 2 -name Makefile -not -path './.git/*' | head -n 1)
+          if [ -z "$MK" ]; then
+            echo "::error::Không thấy Makefile. Makefile phải nằm cùng chỗ với Tweak.x"
+            exit 1
+          fi
+          echo "PROJ=$(cd "$(dirname "$MK")" && pwd)" >> "$GITHUB_ENV"
+
+      - name: Cài công cụ (GNU make, ldid, xz)
+        run: brew install make ldid xz
+
+      - name: Cài Theos
+        run: |
+          git clone --recursive https://github.com/theos/theos.git "$HOME/theos"
+          echo "THEOS=$HOME/theos" >> "$GITHUB_ENV"
+
+      - name: Tải iOS SDK cho Theos
+        run: |
+          "$HOME/theos/bin/install-sdk" latest || echo "::warning::install-sdk lỗi, Theos sẽ dùng SDK có sẵn trong Xcode"
+
+      - name: Đặt Architecture trong control
+        run: |
+          cd "$PROJ"
+          sed -i '' "s/^Architecture:.*/Architecture: ${{ matrix.arch }}/" control
+          grep '^Architecture' control
+
+      - name: Build
+        run: |
+          cd "$PROJ"
+          gmake clean package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME="${{ matrix.scheme }}"
+          ls -la packages
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LiquidMenu-${{ matrix.name }}
+          path: ${{ env.PROJ }}/packages/*.deb
+          if-no-files-found: error
+
+  # Đẩy tag dạng v0.1.0 lên thì .deb được đính vào trang Releases (tải thẳng từ iPhone, không cần đăng nhập)
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: debs
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: debs/*.deb
