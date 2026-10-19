@@ -2,19 +2,19 @@
 #import <objc/runtime.h>
 #import <rootless.h>
 #import "LGMenuMorph.h"
+#import "LGLog.h"
 
 #define kPrefs @"/var/mobile/Library/Preferences/com.yourname.liquidmenu.plist"
 
 static NSArray<NSString *> *gHints;       // chuỗi con trong tên class private của menu (đã lọc: toàn NSString không rỗng)
-static BOOL gEnabled = YES, gDebug = NO, gBusy = NO;
-static __weak UIView *gSource;            // nút vừa được chạm
+static BOOL gEnabled = YES, gBusy = NO;
+static __weak UIView *gSource;            // nút vừa được chạm (nil nếu chạm vào chỗ không phải nút)
 static CGPoint gTouch;                    // vị trí chạm (toạ độ window)
 static CFTimeInterval gSourceT;
 
 static BOOL LGNameHas(id obj, const char *s) { return obj && strstr(object_getClassName(obj), s) != NULL; }
 
-// MỘT định nghĩa duy nhất của "view này thuộc menu" — dùng cho cả LGInMenu lẫn didMoveToWindow,
-// nên đổi `hints` trong plist thì mọi chỗ cùng đổi theo.
+// MỘT định nghĩa duy nhất của "view này thuộc menu" — dùng cho cả LGInMenu lẫn didMoveToWindow.
 static BOOL LGMatchName(const char *n) {
     if (!n) return NO;
     for (NSString *h in gHints) if (strstr(n, h.UTF8String)) return YES;
@@ -29,7 +29,7 @@ static BOOL LGInMenu(UIView *v) {
 }
 
 // Nhiều class lồng nhau cùng khớp hints và UIKit gọi didMoveToWindow theo thứ tự không đảm bảo ->
-// không lấy view khớp đầu tiên, mà lấy view NGOÀI CÙNG vẫn khớp (không tính UIWindow).
+// lấy view NGOÀI CÙNG vẫn khớp (không tính UIWindow).
 static UIView *LGOutermost(UIView *v) {
     UIView *top = v;
     for (UIView *c = v.superview; c && ![c isKindOfClass:UIWindow.class]; c = c.superview)
@@ -37,16 +37,60 @@ static UIView *LGOutermost(UIView *v) {
     return top;
 }
 
-// Từ view bị chạm đi lên tìm "nút" (UIControl hoặc class có chữ Button)
+static BOOL LGButtonLike(UIView *v) { return [v isKindOfClass:UIControl.class] || LGNameHas(v, "Button"); }
+
+// Từ view bị chạm đi lên tìm "nút". Không phải nút -> nil (menu mở bằng nhấn giữ vào ô/ghi chú... không có animation).
 static UIView *LGPickSource(UIView *v) {
     for (UIView *c = v; c && c.bounds.size.width < 120; c = c.superview)
-        if ([c isKindOfClass:UIControl.class] || LGNameHas(c, "Button")) return c;
-    return v;
+        if (LGButtonLike(c)) return c;
+    return nil;
 }
 
-static void LGLabels(UIView *v, NSMutableArray *out) {
+// nút đầu tiên trong view (chính nó hoặc hậu duệ gần), kích thước như nút
+static UIView *LGFirstButton(UIView *v, int depth) {
+    if (LGButtonLike(v) && v.bounds.size.width < 120) return v;
+    if (depth >= 3) return nil;
+    for (UIView *s in v.subviews) {
+        UIView *b = LGFirstButton(s, depth + 1);
+        if (b) return b;
+    }
+    return nil;
+}
+
+// Nhóm nút liền nhau cùng hàng (vd chia sẻ + "…" trên thanh điều hướng) -> gộp thành một viên thuốc.
+static NSArray<UIView *> *LGGroupFor(UIView *src) {
+    NSMutableArray<UIView *> *group = [NSMutableArray arrayWithObject:src];
+    if (!LGP.groupButtons) return group;
+    CGRect u = [src convertRect:src.bounds toView:nil];
+    for (int round = 0; round < 3; round++) {
+        BOOL grew = NO;
+        UIView *node = src;
+        for (int level = 0; level < 4 && node.superview; level++, node = node.superview) {
+            BOOL added = NO;
+            for (UIView *sib in node.superview.subviews) {
+                if (sib == node || sib.hidden || sib.alpha < 0.05) continue;
+                UIView *b = LGFirstButton(sib, 0);
+                if (!b || [group containsObject:b] || !b.window) continue;
+                CGRect r = [b convertRect:b.bounds toView:nil];
+                if (r.size.width > 120 || r.size.height > 80) continue;
+                if (fabs(CGRectGetMidY(r) - CGRectGetMidY(u)) > 8 || fabs(r.size.height - u.size.height) > 12) continue;
+                double gap = r.origin.x >= CGRectGetMaxX(u) ? r.origin.x - CGRectGetMaxX(u)
+                           : (u.origin.x >= CGRectGetMaxX(r) ? u.origin.x - CGRectGetMaxX(r) : -1);
+                if (gap < -2 || gap > 20) continue;
+                [group addObject:b];
+                u = CGRectUnion(u, r);
+                added = YES;
+            }
+            if (added) { grew = YES; break; }
+        }
+        if (!grew) break;
+    }
+    return group;
+}
+
+static void LGLabelsOf(UIView *v, NSMutableArray *out) {
     if ([v isKindOfClass:UILabel.class] && ((UILabel *)v).text.length) [out addObject:v];
-    for (UIView *s in v.subviews) LGLabels(s, out);
+    for (UIView *s in v.subviews) LGLabelsOf(s, out);
 }
 
 static UIView *LGLCA(NSArray<UIView *> *views) {
@@ -60,12 +104,16 @@ static UIView *LGLCA(NSArray<UIView *> *views) {
 
 static void LGHandle(UIView *container, int attempt) {
     if (!container.window) { gBusy = NO; return; }
+    if ([LGMenuMorph isActive] && [LGMenuMorph activeContainer] == container) { gBusy = NO; return; }
     NSMutableArray *labels = [NSMutableArray new];
-    LGLabels(container, labels);
+    LGLabelsOf(container, labels);
     if (!labels.count) {   // menu chưa dựng xong nội dung -> thử lại vài lần
         if (attempt < 4) {
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{ LGHandle(container, attempt + 1); });
-        } else gBusy = NO;
+        } else {
+            LGLog(@"bỏ qua: menu %s không có chữ sau %d lần thử", object_getClassName(container), attempt);
+            gBusy = NO;
+        }
         return;
     }
     UIView *content = LGLCA(labels);
@@ -73,37 +121,33 @@ static void LGHandle(UIView *container, int attempt) {
     while (body.superview && body.superview != container &&
            body.superview.bounds.size.width < container.bounds.size.width * 0.9) body = body.superview;
     if (!content || body == container || !body.superview) {
-        if (gDebug) NSLog(@"[LiquidMenu] bỏ qua: container=%s content=%s body=%s", object_getClassName(container),
-                          content ? object_getClassName(content) : "nil", body ? object_getClassName(body) : "nil");
+        LGLog(@"bỏ qua: container=%s content=%s body=%s", object_getClassName(container),
+              content ? object_getClassName(content) : "nil", body ? object_getClassName(body) : "nil");
         gBusy = NO;
         return;
     }
 
-    UIView *host = body.superview;
     UIView *s = gSource;
-    CGRect src = CGRectZero;
-    BOOL fromView = NO;      // src lấy từ khung của nút thật (true) hay chỉ là ô ước lượng quanh chỗ chạm (false)
-    if (s.window) {
-        src = [s convertRect:s.bounds toView:host];
-        fromView = !(CGRectIsEmpty(src) || src.size.width > 120 || src.size.height > 120);
+    if (!s.window) {
+        LGLog(@"bỏ qua: menu %s không xuất phát từ nút (lần chạm cuối không phải nút)", object_getClassName(container));
+        gBusy = NO;
+        return;
     }
-    if (!fromView) src = [host convertRect:CGRectMake(gTouch.x - 22, gTouch.y - 22, 44, 44) fromView:nil];
-    if (gDebug) NSLog(@"[LiquidMenu] morph container=%s body=%s %@ content=%s src=%@ (%@)", object_getClassName(container),
-                      object_getClassName(body), NSStringFromCGRect(body.frame), object_getClassName(content), NSStringFromCGRect(src),
-                      fromView ? @"khung nút thật" : @"ô ước lượng quanh chỗ chạm");
-    [LGMenuMorph runForBody:body content:content source:src sourceView:(fromView ? s : nil) done:^{
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 200 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{ gBusy = NO; });
-    }];
+    NSArray<UIView *> *sources = LGGroupFor(s);
+    NSMutableString *names = [NSMutableString string];
+    for (UIView *v in sources) [names appendFormat:@"%s%@ ", object_getClassName(v), NSStringFromCGRect([v convertRect:v.bounds toView:nil])];
+    LGLog(@"menu từ nút: %@", names);
+    CGRect fb = CGRectMake(gTouch.x - 22, gTouch.y - 22, 44, 44);
+    [LGMenuMorph beginWithContainer:container body:body sources:sources fallbackRect:fb];
+    gBusy = NO;
 }
 
 %hook UIApplication
 - (void)sendEvent:(UIEvent *)e {
     if (gEnabled && e.type == UIEventTypeTouches) {
         for (UITouch *t in e.allTouches) {
+            [LGMenuMorph touch:t];     // chạm ngoài menu -> đóng (làm TRƯỚC %orig để lớp phủ lên trước khi hệ thống kịp đóng)
             if (t.phase != UITouchPhaseBegan) continue;
-            // Menu thật đang bị ẩn trong lúc morph -> chạm mới (vd chạm ra ngoài để đóng) phải
-            // kết thúc morph ngay, nếu không vỏ kính còn nằm đó tới 0.5 s sau khi menu đã đóng.
-            [LGMenuMorph cancelActive];
             if (t.view && !LGInMenu(t.view)) {
                 gSource = LGPickSource(t.view);
                 gTouch = [t locationInView:nil];
@@ -120,20 +164,23 @@ static void LGHandle(UIView *container, int attempt) {
     %orig;
     if (!gEnabled) return;
     const char *n = object_getClassName(self);
-    // debug: ghi lại view của menu bị gỡ khỏi window (để biết lúc nào menu đóng xong)
-    if (gDebug && !self.window && LGMatchName(n)) NSLog(@"[LiquidMenu] -%s (bị gỡ khỏi window)", n);
-    if (!self.window || CACurrentMediaTime() - gSourceT > 1.5) return;
-    if (gDebug) NSLog(@"[LiquidMenu] +%s frame=%@ window=%s", n, NSStringFromCGRect(self.frame), object_getClassName(self.window));
-    if (gBusy || !LGMatchName(n)) return;
-    gBusy = YES;
+    if (!self.window) {
+        if (LGLogOn && LGMatchName(n)) LGLog(@"-%s (bị gỡ khỏi window)", n);
+        return;
+    }
+    if (CACurrentMediaTime() - gSourceT > 1.5) return;
+    if (!LGMatchName(n)) return;
     UIView *top = LGOutermost(self);
+    if ([LGMenuMorph isActive] && [LGMenuMorph activeContainer] == top) return;   // view con của menu đang được xử lý
+    LGLog(@"+%s frame=%@ window=%s level=%.0f", n, NSStringFromCGRect(self.frame), object_getClassName(self.window), (double)self.window.windowLevel);
+    if (gBusy) return;
+    gBusy = YES;
     dispatch_async(dispatch_get_main_queue(), ^{ LGHandle(top, 0); });   // chờ hệ thống dựng xong 1 vòng runloop
 }
 %end
 
 // plist do người dùng sửa tay: kiểu dữ liệu sai không được làm crash app đích
 #define LGNUM(key, field) if ([p[key] respondsToSelector:@selector(doubleValue)]) LGP.field = [p[key] doubleValue];
-
 static BOOL LGBoolOf(id v, BOOL def) { return [v respondsToSelector:@selector(boolValue)] ? [v boolValue] : def; }
 
 %ctor {
@@ -142,8 +189,6 @@ static BOOL LGBoolOf(id v, BOOL def) { return [v respondsToSelector:@selector(bo
         gEnabled = LGBoolOf(p[@"enabled"], YES);
         if ([NSBundle.mainBundle.bundleIdentifier isEqualToString:@"com.apple.springboard"] && !LGBoolOf(p[@"springboard"], NO))
             gEnabled = NO;
-        gDebug = LGBoolOf(p[@"debug"], NO);
-        LGP.debug = gDebug;
 
         // hints: chỉ nhận NSString không rỗng ("" sẽ khớp mọi view; NSNumber sẽ crash ở UTF8String)
         NSMutableArray<NSString *> *hs = [NSMutableArray new];
@@ -154,10 +199,19 @@ static BOOL LGBoolOf(id v, BOOL def) { return [v respondsToSelector:@selector(bo
 
         LGNUM(@"omega", omega) LGNUM(@"offsetDelay", offsetDelay) LGNUM(@"contentDelay", contentDelay)
         LGNUM(@"dotOmega", dotOmega) LGNUM(@"dotDelay", dotDelay) LGNUM(@"radOmega", radOmega)
-        LGNUM(@"radDelay", radDelay) LGNUM(@"blend", blend) LGNUM(@"speed", speed)
+        LGNUM(@"radDelay", radDelay) LGNUM(@"blend", blend) LGNUM(@"speed", speed) LGNUM(@"closeDur", closeDur)
+        LGNUM(@"tint", tint) LGNUM(@"shadow", shadow) LGNUM(@"rim", rim)
+        if ([p[@"material"] respondsToSelector:@selector(intValue)]) LGP.material = [p[@"material"] intValue];
         LGP.useGlass = LGBoolOf(p[@"useGlass"], LGP.useGlass);
         LGP.coverButton = LGBoolOf(p[@"coverButton"], LGP.coverButton);
         LGP.hideSource = LGBoolOf(p[@"hideSource"], LGP.hideSource);
+        LGP.groupButtons = LGBoolOf(p[@"groupButtons"], LGP.groupButtons);
+        LGP.blurText = LGBoolOf(p[@"blurText"], LGP.blurText);
+        LGP.closeAnim = LGBoolOf(p[@"closeAnim"], LGP.closeAnim);
+        LGP.dump = LGBoolOf(p[@"dump"], LGP.dump);
+        LGP.debug = LGBoolOf(p[@"debug"], LGP.debug);
         LGParamsFinalize();
+        LGLogOn = LGP.debug;
+        LGLog(@"LiquidMenu v3 khởi động trong %@ (enabled=%d) log: %@", NSBundle.mainBundle.bundleIdentifier, (int)gEnabled, LGLogPaths());
     }
 }
