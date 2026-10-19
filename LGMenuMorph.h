@@ -1,27 +1,40 @@
 #import <UIKit/UIKit.h>
 
+// Tham số animation (đọc từ plist trong %ctor, có mặc định = đúng bản Flutter mẫu).
 typedef struct {
-    double omega, offsetDelay, contentDelay;   // spring tới hạn cho size / trượt / nội dung
-    double dotOmega, dotDelay;                 // chấm "nút gốc" co lại
-    double radOmega, radDelay;                 // bo góc: viên thuốc -> bo cuối
-    double blend;                              // độ dính metaball (pt)
-    double dur, speed;                         // thời lượng (s), hệ số tốc độ (<1 = chậm)
-    BOOL useGlass;                             // thử UIGlassEffect (iOS 26) trước khi dùng blur thường
-    BOOL debug;                                // ghi log NSLog
-    BOOL coverButton;                          // dời menu thật lên đè nút (giống bản Flutter); NO = giữ chỗ hệ thống
-    BOOL hideSource;                           // ẩn nút gốc trong lúc morph (trả lại khi xong)
+    double omega, offsetDelay, contentDelay;    // thân menu: kích thước / trượt về góc nút / nội dung
+    double dotOmega, dotDelay;                  // chấm "nút gốc" co lại
+    double radOmega, radDelay;                  // bo góc 150 -> bo cuối
+    double blend;                               // độ dính metaball (pt)
+    double dur;                                 // tổng thời gian mở (s) - tính trong LGParamsFinalize
+    double closeDur;                            // thời gian đóng (s): timeline mở chạy ngược
+    double speed;                               // hệ số tốc độ chung (1 = bản gốc)
+    double tint, shadow, rim;                   // độ đậm lớp phủ màu / bóng / viền (0..1)
+    int material;                               // -1 = chép hiệu ứng nền của menu thật; 0..4 = UltraThin..Chrome
+    BOOL useGlass, debug, coverButton, hideSource, groupButtons, blurText, closeAnim, dump;
 } LGParams;
 
 extern LGParams LGP;
-
-/// Gọi một lần sau khi đọc plist: chặn giá trị vô nghĩa (speed<=0, omega<=0...) và tính lại `dur`
-/// đủ dài để mọi spring kịp ổn định (để lúc hiện lại menu thật không bị nhảy).
 void LGParamsFinalize(void);
 
+/// Một "phiên" animation cho mỗi menu: mở (morph) -> menu thật -> đóng (ngược lại).
+/// Tất cả phải gọi từ main thread.
 @interface LGMenuMorph : NSObject
-/// body: view thân menu (đang hiển thị), content: view chứa chữ/icon, src: khung nút nguồn (toạ độ của body.superview),
-/// sourceView: view nút nguồn nếu biết (để ẩn trong lúc morph), nil nếu src chỉ là ô ước lượng quanh chỗ chạm
-+ (void)runForBody:(UIView *)body content:(UIView *)content source:(CGRect)src sourceView:(UIView *)sourceView done:(void (^)(void))done;
-/// Kết thúc ngay morph đang chạy (nếu có): hiện lại menu thật, gỡ vỏ kính, trả lại nút gốc.
-+ (void)cancelActive;
+
+/// Có phiên đang chạy (mở / đang mở / đang đóng) không.
++ (BOOL)isActive;
+/// View container của menu mà phiên hiện tại đang quản (nil nếu không có).
++ (UIView *)activeContainer;
+
+/// Bắt đầu phiên cho menu vừa xuất hiện.
+/// sources: các nút (1 nút, hoặc nhóm nút liền nhau -> thành 1 viên thuốc) sinh ra menu.
+/// rect: ô dự phòng (toạ độ window) nếu khung các nút không dùng được.
++ (void)beginWithContainer:(UIView *)container body:(UIView *)body sources:(NSArray<UIView *> *)sources fallbackRect:(CGRect)rect;
+
+/// Mọi UITouch đi qua UIApplication sendEvent: đều được chuyển vào đây (chạm ngoài menu -> đóng).
++ (void)touch:(UITouch *)t;
+
+/// Dừng ngay, trả lại mọi thứ về nguyên trạng (không animation).
++ (void)cancelAll;
+
 @end
