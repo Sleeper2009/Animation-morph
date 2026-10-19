@@ -35,10 +35,15 @@ static void link_(int *nb, int a, int b) {
     if (nb[a * 2] < 0) nb[a * 2] = b; else nb[a * 2 + 1] = b;
 }
 
-void LGMetaball(LGBox body, double r, double cx, double cy, double rd, double k, double step, LGSink sink) {
-    double rr = fmax(rd, 1.0), pad = k + 3.0;
-    double l = fmin(body.x, cx - rr) - pad, t = fmin(body.y, cy - rr) - pad;
-    double rgt = fmax(body.x + body.w, cx + rr) + pad, btm = fmax(body.y + body.h, cy + rr) + pad;
+void LGMetaballDot(LGBox body, double r, LGBox dot, double dotR, double k, double step, LGSink sink) {
+    // dot suy biến (w/h <= 0) vẫn phải cho ra hình hợp lệ: coi như điểm
+    if (dot.w < 0) dot.w = 0;
+    if (dot.h < 0) dot.h = 0;
+    dotR = fmin(fmax(dotR, 0.0), fmin(dot.w, dot.h) * 0.5);
+    double dcx = dot.x + dot.w * 0.5, dcy = dot.y + dot.h * 0.5;
+    double hw = fmax(dot.w * 0.5, 1.0), hh = fmax(dot.h * 0.5, 1.0), pad = k + 3.0;
+    double l = fmin(body.x, dcx - hw) - pad, t = fmin(body.y, dcy - hh) - pad;
+    double rgt = fmax(body.x + body.w, dcx + hw) + pad, btm = fmax(body.y + body.h, dcy + hh) + pad;
     int nx = (int)ceil((rgt - l) / step), ny = (int)ceil((btm - t) / step);
     int cols = nx + 1, rows = ny + 1, nn = cols * rows;
     double *v = malloc(sizeof(double) * nn);
@@ -48,7 +53,7 @@ void LGMetaball(LGBox body, double r, double cx, double cy, double rd, double k,
 
     for (int n = 0; n < nn; n++) {
         double px = l + (n % cols) * step, py = t + (n / cols) * step;
-        v[n] = smin_(sd_rrect(px, py, body, r), hypot(px - cx, py - cy) - rd, k);
+        v[n] = smin_(sd_rrect(px, py, body, r), sd_rrect(px, py, dot, dotR), k);
         nb[n * 4] = nb[n * 4 + 1] = nb[n * 4 + 2] = nb[n * 4 + 3] = -1;
     }
     for (int j = 0; j < ny; j++) {
@@ -82,4 +87,10 @@ void LGMetaball(LGBox body, double r, double cx, double cy, double rd, double k,
     }
     (void)rows;
     free(v); free(nb); free(seen);
+}
+
+void LGMetaball(LGBox body, double r, double cx, double cy, double rd, double k, double step, LGSink sink) {
+    rd = fmax(rd, 0.0);
+    LGBox d = { cx - rd, cy - rd, rd * 2, rd * 2 };
+    LGMetaballDot(body, r, d, rd, k, step, sink);
 }
