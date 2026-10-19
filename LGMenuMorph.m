@@ -1,20 +1,20 @@
 #import "LGMenuMorph.h"
+#import "LGLog.h"
 #import <QuartzCore/QuartzCore.h>
+#import <CoreImage/CoreImage.h>
 #import <objc/runtime.h>
 #include "LGMetaball.h"
 #include "LGPlan.h"
+#include "LGTimeline.h"
 
 LGParams LGP = { .omega = 29.0, .offsetDelay = 0.124, .contentDelay = 0.048,
                  .dotOmega = 36.0, .dotDelay = 0.01, .radOmega = 40.0, .radDelay = 0.075,
-                 .blend = 24.0, .dur = 0.5, .speed = 1.0, .useGlass = YES, .debug = NO,
-                 .coverButton = YES, .hideSource = YES };
+                 .blend = 24.0, .dur = 0.5, .closeDur = 0.38, .speed = 1.0,
+                 .tint = 0.12, .shadow = 0.18, .rim = 0.14, .material = -1,
+                 .useGlass = YES, .debug = YES, .coverButton = YES, .hideSource = YES, .groupButtons = YES,
+                 .blurText = YES, .closeAnim = YES, .dump = YES };
 
-// Đáp ứng spring tới hạn dạng đóng: 0 -> 1 kể từ t = 0
-static double sp(double t, double w) { return t <= 0 ? 0 : 1 - (1 + w * t) * exp(-w * t); }
-static double cl(double v, double lo, double hi) { return fmin(fmax(v, lo), hi); }
-static double lerp(double a, double b, double t) { return a + (b - a) * t; }
-
-// fmax/fmin trả về đối số không-NaN nên NaN (plist hỏng) cũng bị đẩy về cận dưới/trên.
+// fmax/fmin trả về đối số không-NaN nên NaN (plist hỏng) cũng bị đẩy về cận.
 void LGParamsFinalize(void) {
     LGP.omega = fmax(LGP.omega, 1.0);
     LGP.dotOmega = fmax(LGP.dotOmega, 1.0);
@@ -24,257 +24,771 @@ void LGParamsFinalize(void) {
     LGP.dotDelay = fmax(LGP.dotDelay, 0.0);
     LGP.radDelay = fmax(LGP.radDelay, 0.0);
     LGP.blend = fmax(LGP.blend, 0.0);
-    LGP.speed = fmin(fmax(LGP.speed, 0.05), 10.0);   // speed<=0 sẽ làm tau không tăng -> menu thật bị ẩn mãi
+    LGP.speed = fmin(fmax(LGP.speed, 0.05), 10.0);
+    LGP.closeDur = fmin(fmax(LGP.closeDur, 0.05), 5.0);
+    LGP.tint = fmin(fmax(LGP.tint, 0.0), 1.0);
+    LGP.shadow = fmin(fmax(LGP.shadow, 0.0), 1.0);
+    LGP.rim = fmin(fmax(LGP.rim, 0.0), 1.0);
+    if (LGP.material < -1) LGP.material = -1;
+    if (LGP.material > 4) LGP.material = 4;
     // spring 1 - (1+x)e^-x còn ~0.3% ở x = 8  ->  thời gian ổn định = delay + 8/omega
     double settle = fmax(fmax(LGP.offsetDelay + 8.0 / LGP.omega, LGP.contentDelay + 8.0 / LGP.omega),
                          fmax(LGP.dotDelay + 8.0 / LGP.dotOmega, LGP.radDelay + 8.0 / LGP.radOmega));
-    LGP.dur = cl(settle, 0.5, 3.0);                  // mặc định ra 0.5 như cũ
+    LGP.dur = fmin(fmax(settle, 0.5), 3.0);   // mặc định ra 0.5
 }
+
+// ------------------------------------------------------------------ tiện ích
+static LGBox LGBoxOf(CGRect r) { return (LGBox){ r.origin.x, r.origin.y, r.size.width, r.size.height }; }
+static CGRect LGWinRect(UIView *v) { return [v convertRect:v.bounds toView:nil]; }
 
 static void sMove(void *c, double x, double y) { CGPathMoveToPoint((CGMutablePathRef)c, NULL, x, y); }
 static void sLine(void *c, double x, double y) { CGPathAddLineToPoint((CGMutablePathRef)c, NULL, x, y); }
 static void sClose(void *c) { CGPathCloseSubpath((CGMutablePathRef)c); }
 
-static void Strip(UIView *v) {
+static void LGStrip(UIView *v) {
     [v.layer removeAllAnimations];
-    for (UIView *s in v.subviews) Strip(s);
+    for (UIView *s in v.subviews) LGStrip(s);
 }
 
-// ---- Chỉ chạy khi debug = true: ghi lại những gì hệ thống làm với menu SAU khi morph mở xong
-// (lúc nào bắt đầu đóng, alpha/scale thế nào, bao giờ bị gỡ) để làm animation đóng ở bước sau.
-@interface LGWatcher : NSObject
-@property (nonatomic, weak) UIView *body;
-@property (nonatomic, strong) CADisplayLink *link;
-@property (nonatomic, copy) NSString *last;
-@property (nonatomic) CFTimeInterval t0;
-+ (void)watch:(UIView *)body;
+static void LGLabels(UIView *v, NSMutableArray<UILabel *> *out) {
+    if ([v isKindOfClass:UILabel.class] && ((UILabel *)v).text.length) [out addObject:(UILabel *)v];
+    for (UIView *s in v.subviews) LGLabels(s, out);
+}
+
+static UIView *LGLCAOf(NSArray<UIView *> *views) {
+    for (UIView *cur = views.firstObject; cur; cur = cur.superview) {
+        BOOL all = YES;
+        for (UIView *v in views) if (![v isDescendantOfView:cur]) { all = NO; break; }
+        if (all) return cur;
+    }
+    return nil;
+}
+
+static NSString *LGLabelSig(UIView *root) {
+    NSMutableArray<UILabel *> *ls = [NSMutableArray new];
+    LGLabels(root, ls);
+    NSMutableString *s = [NSMutableString string];
+    for (UILabel *l in ls) { [s appendString:l.text]; [s appendString:@"|"]; }
+    return s;
+}
+
+// UIVisualEffectView lớn nhất bên trong view (nền kính của menu thật), nil nếu không có
+static UIVisualEffectView *LGFindFX(UIView *root, int depth) {
+    UIVisualEffectView *best = nil;
+    if ([root isKindOfClass:UIVisualEffectView.class]) best = (UIVisualEffectView *)root;
+    if (depth < 5)
+        for (UIView *s in root.subviews) {
+            UIVisualEffectView *c = LGFindFX(s, depth + 1);
+            if (c && (!best || c.bounds.size.width * c.bounds.size.height > best.bounds.size.width * best.bounds.size.height)) best = c;
+        }
+    return best;
+}
+
+// bo góc của menu thật: cornerRadius đầu tiên > 1 trong thân, hậu duệ gần, hoặc tổ tiên tới container
+static double LGCornerOf(UIView *body, UIView *container, double maxR) {
+    NSMutableArray<UIView *> *q = [NSMutableArray arrayWithObject:body];
+    for (int d = 0; d < 4 && q.count; d++) {
+        NSMutableArray<UIView *> *next = [NSMutableArray new];
+        for (UIView *v in q) {
+            double r = v.layer.cornerRadius;
+            if (r > 1 && r <= maxR) return r;
+            [next addObjectsFromArray:v.subviews];
+        }
+        q = next;
+    }
+    for (UIView *a = body.superview; a; a = a.superview) {
+        double r = a.layer.cornerRadius;
+        if (r > 1 && r <= maxR) return r;
+        if (a == container) break;
+    }
+    return fmin(14.0, maxR);
+}
+
+static UIImage *LGImageOf(UIView *v, CGFloat scale) {
+    CGSize sz = v.bounds.size;
+    if (sz.width < 1 || sz.height < 1 || sz.width > 2000 || sz.height > 2000) return nil;
+    UIGraphicsImageRendererFormat *fm = [UIGraphicsImageRendererFormat preferredFormat];
+    fm.opaque = NO;
+    fm.scale = scale;
+    UIGraphicsImageRenderer *r = [[UIGraphicsImageRenderer alloc] initWithSize:sz format:fm];
+    return [r imageWithActions:^(UIGraphicsImageRendererContext *c) {
+        if (![v drawViewHierarchyInRect:v.bounds afterScreenUpdates:NO]) [v.layer renderInContext:c.CGContext];
+    }];
+}
+
+static CIContext *gCI;
+static UIImage *LGBlurred(UIImage *img, double sigmaPt) {
+    if (!img.CGImage) return nil;
+    if (!gCI) gCI = [CIContext contextWithOptions:nil];
+    CIImage *in = [CIImage imageWithCGImage:img.CGImage];
+    CGRect ext = in.extent;
+    CIFilter *f = [CIFilter filterWithName:@"CIGaussianBlur"];
+    if (!f) return nil;
+    [f setValue:[in imageByClampingToExtent] forKey:kCIInputImageKey];
+    [f setValue:@(sigmaPt * img.scale) forKey:kCIInputRadiusKey];
+    CIImage *out = [f.outputImage imageByCroppingToRect:ext];
+    if (!out) return nil;
+    CGImageRef cg = [gCI createCGImage:out fromRect:ext];
+    if (!cg) return nil;
+    UIImage *u = [UIImage imageWithCGImage:cg scale:img.scale orientation:UIImageOrientationUp];
+    CGImageRelease(cg);
+    return u;
+}
+
+// Các "hàng" của menu: tổ tiên gần nhất của mỗi UILabel mà rộng >= 85% thân và cao <= 75% thân.
+static NSArray<UIView *> *LGRowViews(UIView *body, UIView *content) {
+    NSMutableArray<UILabel *> *labels = [NSMutableArray new];
+    LGLabels(body, labels);
+    CGRect bw = LGWinRect(body);
+    NSMutableArray<UIView *> *rows = [NSMutableArray new];
+    for (UILabel *l in labels) {
+        for (UIView *a = l.superview; a && a != body; a = a.superview) {
+            CGRect r = LGWinRect(a);
+            if (r.size.width >= bw.size.width * 0.85 && r.size.height <= bw.size.height * 0.75) {
+                if (![rows containsObject:a]) [rows addObject:a];
+                break;
+            }
+        }
+    }
+    if (rows.count == 0 || rows.count > 24) return @[ content ?: body ];
+    [rows sortUsingComparator:^NSComparisonResult(UIView *a, UIView *b) {
+        double ya = CGRectGetMinY(LGWinRect(a)), yb = CGRectGetMinY(LGWinRect(b));
+        return ya < yb ? NSOrderedAscending : (ya > yb ? NSOrderedDescending : NSOrderedSame);
+    }];
+    return rows;
+}
+
+// Đường viền của khung hình: chấm / thân / metaball. Toạ độ tính theo gốc (ox, oy).
+static CGPathRef LGShapePath(const LGTimeFrame *f, double ox, double oy) {
+    CGMutablePathRef p = CGPathCreateMutable();
+    LGBox b = f->body, d = f->dot;
+    b.x -= ox; b.y -= oy; d.x -= ox; d.y -= oy;
+    if (f->mode == LGModeDot) {
+        if (d.w > 0.5 && d.h > 0.5) CGPathAddRoundedRect(p, NULL, CGRectMake(d.x, d.y, d.w, d.h), f->dotR, f->dotR);
+    } else if (f->mode == LGModeBody) {
+        CGPathAddRoundedRect(p, NULL, CGRectMake(b.x, b.y, b.w, b.h), f->r, f->r);
+    } else {
+        LGSink s = { p, sMove, sLine, sClose };
+        LGMetaballDot(b, f->r, d, f->dotR, f->k, 2.5, s);
+        if (CGPathIsEmpty(p)) CGPathAddRoundedRect(p, NULL, CGRectMake(b.x, b.y, b.w, b.h), f->r, f->r);
+    }
+    return p;
+}
+
+// ------------------------------------------------------------------ phiên
+typedef NS_ENUM(NSInteger, LGState) { LGStOpening, LGStOpen, LGStClosing, LGStSettling, LGStDone };
+
+@interface LGRow : NSObject
+@property (nonatomic) CGRect rect;                 // khung cuối (toạ độ window, đã tính phần dời menu)
+@property (nonatomic, strong) CALayer *holder, *sharp, *blur;
+@end
+@implementation LGRow
 @end
 
-@implementation LGWatcher
-+ (void)watch:(UIView *)body {
-    LGWatcher *w = [LGWatcher new];
-    w.body = body;
-    w.t0 = CACurrentMediaTime();
-    w.link = [CADisplayLink displayLinkWithTarget:w selector:@selector(tick:)];
-    [w.link addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
-    NSLog(@"[LiquidMenu] watch: bắt đầu theo dõi menu (tối đa 15 s)");
-}
-- (void)tick:(CADisplayLink *)l {
-    UIView *b = self.body;
-    double dt = CACurrentMediaTime() - self.t0;
-    if (!b || !b.window || dt > 15) {
-        NSLog(@"[LiquidMenu] watch: kết thúc t=%.3f %@", dt, !b ? @"(body đã bị giải phóng)" : (!b.window ? @"(body rời khỏi window)" : @"(hết 15 s, menu vẫn mở)"));
-        [l invalidate];
-        self.link = nil;
-        return;
-    }
-    double minA = 1;
-    unsigned long anims = 0;
-    for (UIView *v = b; v; v = v.superview) {
-        CALayer *pl = v.layer.presentationLayer ?: v.layer;
-        minA = fmin(minA, fmin((double)pl.opacity, (double)v.alpha));
-        anims += (unsigned long)v.layer.animationKeys.count;
-    }
-    CALayer *bp = b.layer.presentationLayer ?: b.layer;
-    NSString *sig = [NSString stringWithFormat:@"alphaMin=%.2f anims=%lu scale=%.2f hidden=%d", minA, anims, [bp affineTransform].a, (int)b.hidden];
-    if (![sig isEqualToString:self.last]) {
-        NSLog(@"[LiquidMenu] watch t=%.3f %@", dt, sig);
-        self.last = sig;
-    }
-}
-@end
+static LGMenuMorph *gSession;
+static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu bên trong thân menu?
 
-static __weak LGMenuMorph *gActive;   // morph đang chạy (chỉ có thể có một)
-
-@interface LGMenuMorph ()
-@property (nonatomic, strong) UIView *body, *host, *shell, *snap, *srcView;
+@interface LGMenuMorph () {
+    LGTimeSpec _spec;
+    LGTimeGeom _geom;
+    CGRect _F;            // khung cuối của menu thật (toạ độ window, sau khi dời)
+    CGRect _src;          // khung nút / viên thuốc nguồn
+    CGRect _R;            // vùng của view phủ
+    CGRect _contentF;     // khung cuối của nội dung
+    CGSize _bodySize;     // bounds.size của thân lúc quan sát gần nhất (phát hiện đổi nội dung)
+    double _tau;
+    CFTimeInterval _lastT, _settleT;
+    int _ticks, _pinFix;
+    double _baseA, _baseS;
+    NSString *_sig, *_lastWatch, *_labelSig;
+}
+@property (nonatomic, weak) UIView *container, *body, *content;
+@property (nonatomic, strong) NSArray<UIView *> *sources;
+@property (nonatomic, strong) NSMutableArray<NSNumber *> *srcAlpha;
+@property (nonatomic, strong) NSMutableArray<UIView *> *iconSnaps;
+@property (nonatomic, strong) UIWindow *ow;
+@property (nonatomic, strong) UIView *reg, *clip, *fullSnap;
 @property (nonatomic, strong) UIVisualEffectView *fx;
-@property (nonatomic, strong) CAShapeLayer *mask, *rim;
+@property (nonatomic, strong) CAShapeLayer *shadowL, *shadowMask, *fxMask, *tintL, *clipMask, *rimL;
+@property (nonatomic, strong) NSMutableArray<LGRow *> *rows;
 @property (nonatomic, strong) CADisplayLink *link;
-@property (nonatomic) CFTimeInterval t0;
-@property (nonatomic) CGRect F, cf;
-@property (nonatomic) CGPoint A0, A1, C;        // C = tâm nút (chỗ chấm tròn), A0/A1 = điểm neo của thân lúc đầu/cuối
-@property (nonatomic) CGFloat ax, ay, R, rBtn, srcAlpha;
-@property (nonatomic, copy) void (^done)(void);
+@property (nonatomic) LGState state;
 @end
 
 @implementation LGMenuMorph
 
-+ (UIVisualEffect *)effect {
-    Class g = NSClassFromString(@"UIGlassEffect"); // iOS 26+
-    if (LGP.useGlass && g) {
-        id e = [g new];
-        if ([e isKindOfClass:UIVisualEffect.class]) return e;
++ (BOOL)isActive { return gSession && gSession.state != LGStDone; }
++ (UIView *)activeContainer { return gSession.container; }
++ (void)cancelAll { [gSession abort:@"cancelAll"]; }
+
++ (void)beginWithContainer:(UIView *)container body:(UIView *)body sources:(NSArray<UIView *> *)sources fallbackRect:(CGRect)fb {
+    if (gSession) {
+        if (gSession.container == container) return;
+        [gSession abort:@"có menu mới xuất hiện"];
     }
-    return [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemThinMaterial];
+    LGMenuMorph *m = [LGMenuMorph new];
+    if (![m setupContainer:container body:body sources:sources fallback:fb]) { LGLog(@"setup thất bại -> bỏ qua morph"); return; }
+    gSession = m;
+    [m start];
 }
 
-+ (void)cancelActive {
-    LGMenuMorph *m = gActive;
-    if (m) [m finish];
-}
-
-+ (void)runForBody:(UIView *)body content:(UIView *)content source:(CGRect)src sourceView:(UIView *)sv done:(void (^)(void))done {
+// ---------------------------------------------------------------- chuẩn bị (chưa đổi gì nhìn thấy được)
+- (BOOL)setupContainer:(UIView *)container body:(UIView *)body sources:(NSArray<UIView *> *)sources fallback:(CGRect)fb {
+    UIWindow *win = body.window;
     UIView *host = body.superview;
-    UIWindow *win = host.window;
-    if (!host || !win) { if (done) done(); return; }
+    if (!win || !host) return NO;
+    self.container = container;
+    self.body = body;
+    self.state = LGStOpening;
+    self.rows = [NSMutableArray new];
+    self.iconSnaps = [NSMutableArray new];
 
-    // 1) Đưa menu thật về trạng thái cuối (bỏ animation hệ thống)
-    Strip(body);
-    // Nếu hệ thống để menu ở trạng thái đầu (vd scale nhỏ) thì `frame` bị méo -> khung cuối sai và lúc hiện lại
-    // menu thật sẽ "nhảy". Trạng thái cuối của menu là transform = identity.
+    LGStrip(body);
     if (!CGAffineTransformIsIdentity(body.transform)) {
-        if (LGP.debug) NSLog(@"[LiquidMenu] body.transform != identity (%@) -> reset", NSStringFromCGAffineTransform(body.transform));
+        LGLog(@"body.transform != identity (%@) -> đặt lại", NSStringFromCGAffineTransform(body.transform));
         body.transform = CGAffineTransformIdentity;
     }
     [body layoutIfNeeded];
-    CGRect F0 = body.frame;
-    if (CGRectIsEmpty(F0)) { if (done) done(); return; }
+    _bodySize = body.bounds.size;
+    if (_bodySize.width < 20 || _bodySize.height < 20) return NO;
+    CGRect F0 = LGWinRect(body);
 
-    // 2) Hình học theo bản Flutter (xem LGPlan.h): thân neo ở góc, trượt về góc của NÚT; menu thật được dời để đè lên nút
-    CGRect scr = [host convertRect:win.bounds fromView:win];
-    LGPlan pl = LGPlanGeometry((LGBox){ src.origin.x, src.origin.y, src.size.width, src.size.height },
-                               (LGBox){ F0.origin.x, F0.origin.y, F0.size.width, F0.size.height },
-                               (LGBox){ scr.origin.x, scr.origin.y, scr.size.width, scr.size.height }, LGP.coverButton);
-    if (fabs(pl.dx) > 0.5 || fabs(pl.dy) > 0.5) {
-        body.transform = CGAffineTransformMakeTranslation(pl.dx, pl.dy);   // dời menu thật; cf/F bên dưới tính sau khi dời
-        [body layoutIfNeeded];
+    CGRect src = CGRectNull;
+    NSMutableArray<UIView *> *srcs = [NSMutableArray new];
+    for (UIView *v in sources) {
+        if (!v.window) continue;
+        CGRect r = LGWinRect(v);
+        if (CGRectIsEmpty(r) || r.size.width > 200 || r.size.height > 100) continue;
+        src = CGRectUnion(src, r);
+        [srcs addObject:v];
     }
-    if (LGP.debug)
-        NSLog(@"[LiquidMenu] plan cover=%d src=%@ menu=%@ -> dời (%+.1f,%+.1f) neo=(%.0f,%.0f) a0=(%.1f,%.1f) a1=(%.1f,%.1f)",
-              (int)LGP.coverButton, NSStringFromCGRect(src), NSStringFromCGRect(F0), pl.dx, pl.dy, pl.ax, pl.ay, pl.a0x, pl.a0y, pl.a1x, pl.a1y);
-
-    UIView *snap = [content snapshotViewAfterScreenUpdates:YES];
-    if (!snap) {
-        body.transform = CGAffineTransformIdentity;   // hoàn tác phần dời
-        if (done) done();
-        return;
+    if (CGRectIsNull(src) || CGRectIsEmpty(src)) {
+        if (CGRectIsEmpty(fb)) return NO;
+        src = fb;
     }
+    self.sources = srcs;
+    _src = src;
 
-    LGMenuMorph *m = [LGMenuMorph new];
-    m.body = body; m.host = host; m.done = done; m.snap = snap;
-    m.F = body.frame;                                          // khung cuối của menu (sau khi dời)
-    m.cf = [content convertRect:content.bounds toView:host];   // khung cuối của nội dung
-    m.rBtn = fmin(src.size.width, src.size.height) / 2;
-    m.C = CGPointMake(CGRectGetMidX(src), CGRectGetMidY(src));
-    m.A0 = CGPointMake(pl.a0x, pl.a0y);
-    m.A1 = CGPointMake(pl.a1x, pl.a1y);
-    m.ax = (CGFloat)pl.ax;
-    m.ay = (CGFloat)pl.ay;
-    m.R = body.layer.cornerRadius > 1 ? body.layer.cornerRadius : 28;
+    CGRect scr = win.bounds;
+    LGPlan pl = LGPlanGeometry(LGBoxOf(src), LGBoxOf(F0), LGBoxOf(scr), LGP.coverButton);
+    _F = CGRectOffset(F0, pl.dx, pl.dy);
 
-    // 3) Vỏ kính của riêng ta: blur/glass + nội dung, cắt bằng mask metaball
-    UIView *shell = [[UIView alloc] initWithFrame:host.bounds];
-    shell.userInteractionEnabled = NO;
-    UIView *masked = [[UIView alloc] initWithFrame:shell.bounds];
-    UIVisualEffectView *fx = [[UIVisualEffectView alloc] initWithEffect:[self effect]];
-    fx.frame = masked.bounds;
-    [masked addSubview:fx];
-    m.fx = fx;
-    snap.bounds = CGRectMake(0, 0, m.cf.size.width, m.cf.size.height);
-    [masked addSubview:snap];
-    m.mask = [CAShapeLayer layer];
-    m.mask.frame = masked.bounds;
-    m.mask.fillColor = UIColor.blackColor.CGColor;
-    masked.layer.mask = m.mask;
-    m.rim = [CAShapeLayer layer];
-    m.rim.frame = shell.bounds;
-    m.rim.fillColor = nil;
-    m.rim.strokeColor = [UIColor colorWithWhite:1 alpha:0.28].CGColor;
-    m.rim.lineWidth = 0.7;
-    [shell addSubview:masked];
-    [shell.layer addSublayer:m.rim];
-    [host insertSubview:shell aboveSubview:body];
-    m.shell = shell;
-    body.hidden = YES;       // menu thật ẩn trong lúc morph, hiện lại ở cuối
+    _spec = (LGTimeSpec){ LGP.omega, LGP.offsetDelay, LGP.contentDelay, LGP.dotOmega, LGP.dotDelay,
+                          LGP.radOmega, LGP.radDelay, LGP.blend, LGP.dur };
+    double maxR = fmin(_F.size.width, _F.size.height) / 2;
+    _geom = (LGTimeGeom){ _F.size.width, _F.size.height, pl.ax, pl.ay, pl.a0x, pl.a0y, pl.a1x, pl.a1y,
+                          LGCornerOf(body, container, maxR), LGBoxOf(src) };
 
-    // Nút gốc: bản Flutter cho icon nút biến mất ngay khung đầu; ở đây nút thật nằm dưới nên phải ẩn nó đi.
-    // Không ẩn nếu view đó là tổ tiên/hậu duệ của menu (tránh ẩn nhầm cả màn hình hoặc chính menu).
-    if (LGP.hideSource && sv && sv.window && ![host isDescendantOfView:sv] && ![sv isDescendantOfView:host]) {
-        m.srcView = sv;
-        m.srcAlpha = sv.alpha;
-        sv.alpha = 0;
-        if (LGP.debug) NSLog(@"[LiquidMenu] ẩn nút gốc %s", object_getClassName(sv));
+    // nội dung
+    NSMutableArray<UILabel *> *labels = [NSMutableArray new];
+    LGLabels(body, labels);
+    UIView *content = labels.count ? LGLCAOf(labels) : nil;
+    if (!content || content == container) content = body;
+    self.content = content;
+    _labelSig = LGLabelSig(body);
+
+    LGLog(@"BẮT ĐẦU container=%s body=%s content=%s", object_getClassName(container), object_getClassName(body), object_getClassName(content));
+    LGLog(@"  nút/viên thuốc=%@ (%lu view)  menu=%@ -> dời (%+.1f,%+.1f) F=%@", NSStringFromCGRect(src), (unsigned long)srcs.count,
+          NSStringFromCGRect(F0), pl.dx, pl.dy, NSStringFromCGRect(_F));
+    LGLog(@"  neo=(%.0f,%.0f) a0=(%.1f,%.1f) a1=(%.1f,%.1f) bo góc cuối=%.1f dur=%.3f closeDur=%.3f", pl.ax, pl.ay, pl.a0x, pl.a0y, pl.a1x, pl.a1y,
+          _geom.rFinal, _spec.dur, LGP.closeDur);
+
+    [self buildOverlayFor:win];
+    [self buildContent];
+    if (LGP.dump) {
+        LGLogTree(@"menu (container) lúc mới xuất hiện", container);
+        UIView *s0 = srcs.firstObject;
+        if (s0) LGLogTree(@"nút nguồn (cha của nút)", s0.superview ?: s0);
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{ LGLogClassesOnce(); });
     }
-
-    [m renderAt:0];
-    m.t0 = CACurrentMediaTime();
-    m.link = [CADisplayLink displayLinkWithTarget:m selector:@selector(tick:)];
-    [m.link addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
-    gActive = m;
+    return YES;
 }
 
-- (void)tick:(CADisplayLink *)l {
-    double tau = (CACurrentMediaTime() - self.t0) * LGP.speed;
-    if (tau >= LGP.dur || !self.host.window) { [self finish]; return; }
-    [self renderAt:tau];
-}
-
-- (void)finish {
-    if (!self.link) return;                  // đã kết thúc rồi (tick + cancelActive có thể cùng gọi)
-    [self.link invalidate];
-    self.link = nil;
-    if (gActive == self) gActive = nil;
-    self.body.hidden = NO;
-    if (self.srcView) {                      // trả lại nút gốc ở MỌI đường thoát
-        self.srcView.alpha = self.srcAlpha;
-        self.srcView = nil;
+- (UIVisualEffect *)makeEffect {
+    if (LGP.useGlass) {
+        Class g = NSClassFromString(@"UIGlassEffect");   // iOS 26+
+        if (g) {
+            id e = [g new];
+            if ([e isKindOfClass:UIVisualEffect.class]) return e;
+        }
     }
-    if (LGP.debug) [LGWatcher watch:self.body];
-    // Không được đổi alpha của vỏ: alpha < 1 ở tổ tiên của UIVisualEffectView làm hiệu ứng mất ngay.
-    // Mờ dần bằng cách đưa effect về nil, cùng lúc mờ nội dung chụp và viền.
-    UIView *s = self.shell;
-    UIVisualEffectView *fx = self.fx;
-    UIView *snap = self.snap;
-    CAShapeLayer *rim = self.rim;
-    [CATransaction begin];
-    [CATransaction setAnimationDuration:0.08];
-    rim.opacity = 0;
-    [CATransaction commit];
-    [UIView animateWithDuration:0.08 animations:^{ fx.effect = nil; snap.alpha = 0; }
-                     completion:^(BOOL f) { [s removeFromSuperview]; }];
-    if (self.done) self.done();
+    if (LGP.material < 0) {
+        UIVisualEffectView *real = self.body ? LGFindFX(self.body, 0) : nil;
+        if (!real && self.container) real = LGFindFX(self.container, 0);
+        LGLog(@"  nền thật: %s effect=%@", real ? object_getClassName(real) : "(không có UIVisualEffectView)", real.effect);
+        if (real.effect) return real.effect;
+    }
+    UIBlurEffectStyle styles[5] = { UIBlurEffectStyleSystemUltraThinMaterial, UIBlurEffectStyleSystemThinMaterial, UIBlurEffectStyleSystemMaterial,
+                                    UIBlurEffectStyleSystemThickMaterial, UIBlurEffectStyleSystemChromeMaterial };
+    int i = LGP.material >= 0 && LGP.material <= 4 ? LGP.material : 4;
+    return [UIBlurEffect effectWithStyle:styles[i]];
 }
 
-// Toàn bộ timeline đo từ 12 khung hình (xem bản Flutter): mỗi thành phần một spring riêng
+- (void)buildOverlayFor:(UIWindow *)win {
+    UIWindowScene *sc = win.windowScene;
+    UIWindow *ow = sc ? [[UIWindow alloc] initWithWindowScene:sc] : [[UIWindow alloc] initWithFrame:win.bounds];
+    ow.frame = win.frame;
+    ow.windowLevel = fmax(UIWindowLevelAlert + 100, win.windowLevel + 1);
+    ow.backgroundColor = UIColor.clearColor;
+    ow.userInteractionEnabled = NO;
+    self.ow = ow;
+
+    _R = CGRectInset(CGRectUnion(_F, _src), -56, -56);
+    UIView *reg = [[UIView alloc] initWithFrame:_R];
+    reg.userInteractionEnabled = NO;
+    reg.backgroundColor = UIColor.clearColor;
+    [ow addSubview:reg];
+    self.reg = reg;
+    UITraitCollection *tc = win.traitCollection;
+
+    // 1) bóng (chỉ phần ngoài hình dạng: mask even-odd)
+    CAShapeLayer *sh = [CAShapeLayer layer];
+    sh.frame = reg.bounds;
+    sh.fillColor = nil;
+    sh.shadowColor = UIColor.blackColor.CGColor;
+    sh.shadowOpacity = (float)LGP.shadow;
+    sh.shadowRadius = 16;
+    sh.shadowOffset = CGSizeMake(0, 6);
+    CAShapeLayer *shm = [CAShapeLayer layer];
+    shm.frame = reg.bounds;
+    shm.fillColor = UIColor.blackColor.CGColor;
+    shm.fillRule = kCAFillRuleEvenOdd;
+    sh.mask = shm;
+    [reg.layer addSublayer:sh];
+    self.shadowL = sh;
+    self.shadowMask = shm;
+
+    // 2) nền kính: mask đặt thẳng lên UIVisualEffectView (tổ tiên có mask làm hiệu ứng hỏng)
+    UIVisualEffectView *fx = [[UIVisualEffectView alloc] initWithEffect:[self makeEffect]];
+    fx.frame = reg.bounds;
+    fx.userInteractionEnabled = NO;
+    CAShapeLayer *fm = [CAShapeLayer layer];
+    fm.frame = reg.bounds;
+    fm.fillColor = UIColor.blackColor.CGColor;
+    fx.layer.mask = fm;
+    [reg addSubview:fx];
+    self.fx = fx;
+    self.fxMask = fm;
+
+    // 3) lớp phủ màu nhẹ để nhìn thấy khối kính trên nền trắng
+    CAShapeLayer *tl = [CAShapeLayer layer];
+    tl.frame = reg.bounds;
+    tl.fillColor = [[UIColor.secondarySystemBackgroundColor resolvedColorWithTraitCollection:tc] colorWithAlphaComponent:LGP.tint].CGColor;
+    [reg.layer addSublayer:tl];
+    self.tintL = tl;
+
+    // 4) nội dung (từng hàng, ảnh chụp thật, icon nút), cắt theo hình dạng
+    UIView *clip = [[UIView alloc] initWithFrame:reg.bounds];
+    clip.userInteractionEnabled = NO;
+    clip.backgroundColor = UIColor.clearColor;
+    CAShapeLayer *cm = [CAShapeLayer layer];
+    cm.frame = reg.bounds;
+    cm.fillColor = UIColor.blackColor.CGColor;
+    clip.layer.mask = cm;
+    [reg addSubview:clip];
+    self.clip = clip;
+    self.clipMask = cm;
+
+    // 5) viền mảnh
+    CAShapeLayer *rl = [CAShapeLayer layer];
+    rl.frame = reg.bounds;
+    rl.fillColor = nil;
+    rl.lineWidth = 0.8;
+    rl.strokeColor = [[UIColor.labelColor resolvedColorWithTraitCollection:tc] colorWithAlphaComponent:LGP.rim].CGColor;
+    [reg.layer addSublayer:rl];
+    self.rimL = rl;
+}
+
+// Chụp nội dung thật (hàng, ảnh toàn bộ, icon nút). Gọi khi menu thật còn nhìn thấy.
+- (void)buildContent {
+    UIView *body = self.body, *content = self.content;
+    if (!body || !content) return;
+    CGFloat scale = body.window.screen.scale ?: UIScreen.mainScreen.scale;
+
+    // ảnh toàn bộ nội dung: dùng để bàn giao sang menu thật không bị giật (và làm khung đầu của lúc đóng)
+    UIView *snap = [content snapshotViewAfterScreenUpdates:YES];   // YES: cũng chốt luôn mọi thay đổi chờ xử lý
+    [self.fullSnap removeFromSuperview];
+    self.fullSnap = snap;
+    CGRect bodyW = LGWinRect(body);
+    CGPoint off = CGPointMake(_F.origin.x - bodyW.origin.x, _F.origin.y - bodyW.origin.y);
+    CGRect cw = LGWinRect(content);
+    _contentF = CGRectOffset(cw, off.x, off.y);
+    if (snap) {
+        snap.frame = CGRectOffset(_contentF, -_R.origin.x, -_R.origin.y);
+        snap.alpha = 0;
+        [self.clip addSubview:snap];
+    }
+
+    // từng hàng
+    for (LGRow *r in self.rows) [r.holder removeFromSuperlayer];
+    [self.rows removeAllObjects];
+    for (UIView *v in LGRowViews(body, content)) {
+        UIImage *img = LGImageOf(v, scale);
+        if (!img.CGImage) continue;
+        LGRow *row = [LGRow new];
+        row.rect = CGRectOffset(LGWinRect(v), off.x, off.y);
+        CALayer *h = [CALayer layer];
+        h.bounds = CGRectMake(0, 0, row.rect.size.width, row.rect.size.height);
+        h.hidden = YES;
+        CALayer *s = [CALayer layer];
+        s.frame = h.bounds;
+        s.contents = (__bridge id)img.CGImage;
+        s.contentsScale = img.scale;
+        [h addSublayer:s];
+        row.sharp = s;
+        if (LGP.blurText) {
+            UIImage *bl = LGBlurred(img, 3.0);
+            if (bl.CGImage) {
+                CALayer *b = [CALayer layer];
+                b.frame = h.bounds;
+                b.contents = (__bridge id)bl.CGImage;
+                b.contentsScale = bl.scale;
+                b.opacity = 0;
+                [h addSublayer:b];
+                row.blur = b;
+            }
+        }
+        row.holder = h;
+        [self.clip.layer insertSublayer:h atIndex:0];   // dưới fullSnap và icon
+        [self.rows addObject:row];
+    }
+    LGLog(@"  nội dung: %lu hàng, ảnh toàn bộ=%@ contentF=%@", (unsigned long)self.rows.count, snap ? @"có" : @"KHÔNG", NSStringFromCGRect(_contentF));
+}
+
+// ---------------------------------------------------------------- bắt đầu (đổi thứ nhìn thấy được)
+- (void)start {
+    UIView *body = self.body;
+    // icon các nút nguồn: chụp trước khi ẩn
+    for (UIView *v in self.sources) {
+        UIView *s = [v snapshotViewAfterScreenUpdates:NO];
+        if (s) {
+            s.frame = CGRectOffset(LGWinRect(v), -_R.origin.x, -_R.origin.y);
+            [self.clip addSubview:s];
+            [self.iconSnaps addObject:s];
+        }
+    }
+    // dời menu thật tới chỗ đã tính (đè lên nút) rồi ẩn: lớp phủ của ta thay thế nó trong lúc morph
+    [self pinBody];
+    body.hidden = YES;
+    if (LGP.hideSource) {
+        self.srcAlpha = [NSMutableArray new];
+        for (UIView *v in self.sources) {
+            [self.srcAlpha addObject:@(v.alpha < 0.05 ? 1.0 : v.alpha)];
+            [v.layer removeAllAnimations];
+            v.alpha = 0;
+        }
+    }
+    _tau = 0;
+    [self renderAt:0];
+    self.ow.hidden = NO;
+    _lastT = CACurrentMediaTime();
+    self.link = [CADisplayLink displayLinkWithTarget:self selector:@selector(tick:)];
+    [self.link addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
+}
+
+// ---------------------------------------------------------------- khung hình
 - (void)renderAt:(double)tau {
-    double ps = sp(tau, LGP.omega);                          // kích thước thân
-    double po = sp(tau - LGP.offsetDelay, LGP.omega);        // trượt về điểm neo cuối (trễ)
-    double pc = sp(tau - LGP.contentDelay, LGP.omega);       // nội dung phóng to
-    double pd = sp(tau - LGP.dotDelay, LGP.dotOmega);        // chấm nút gốc co lại
-    double pr = sp(tau - LGP.radDelay, LGP.radOmega);        // bo góc
+    LGTimeFrame f = LGTimelineAt(&_spec, &_geom, tau);
+    CGPathRef P = LGShapePath(&f, _R.origin.x, _R.origin.y);
+    CGMutablePathRef outside = CGPathCreateMutable();
+    CGPathAddRect(outside, NULL, self.reg.bounds);
+    CGPathAddPath(outside, NULL, P);
 
-    CGPoint a = CGPointMake(lerp(_A0.x, _A1.x, po), lerp(_A0.y, _A1.y, po));
-    double w = _F.size.width * ps, h = _F.size.height * ps;
-    CGRect Bt = CGRectMake(a.x - _ax * w, a.y - _ay * h, w, h);   // thân neo theo điểm (ax, ay)
-    double r = fmin(lerp(150, _R, pr), fmin(w, h) / 2);
-    double rd = _rBtn * (1 - pd);
-    double k = LGP.blend * cl((0.24 - tau) / 0.08, 0, 1);
-
-    CGMutablePathRef p = CGPathCreateMutable();
-    if (w < 1 || h < 1) {
-        CGPathAddEllipseInRect(p, NULL, CGRectMake(_C.x - rd, _C.y - rd, rd * 2, rd * 2));
-    } else if (k < 0.5) {
-        CGPathRef rr = CGPathCreateWithRoundedRect(Bt, r, r, NULL);
-        CGPathAddPath(p, NULL, rr);
-        CGPathRelease(rr);
-    } else {
-        LGSink s = { p, sMove, sLine, sClose };
-        LGMetaball((LGBox){ Bt.origin.x, Bt.origin.y, w, h }, r, _C.x, _C.y, rd, k, 2.5, s);
-    }
-
-    double op = cl((pc - 0.35) / 0.5, 0, 1);
-    CGPoint cc = CGPointMake(CGRectGetMidX(Bt) + (CGRectGetMidX(_cf) - CGRectGetMidX(_F)),
-                             CGRectGetMinY(Bt) + (CGRectGetMidY(_cf) - CGRectGetMinY(_F)));
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
-    self.mask.path = p;
-    self.rim.path = p;
-    self.snap.alpha = op;
-    self.snap.center = cc;
-    double sc = fmax(pc, 0.001);
-    self.snap.transform = CGAffineTransformMakeScale(sc, sc);
+    self.fxMask.path = P;
+    self.tintL.path = P;
+    self.clipMask.path = P;
+    self.rimL.path = P;
+    self.shadowL.shadowPath = P;
+    self.shadowMask.path = outside;
+
+    for (UIView *s in self.iconSnaps) s.alpha = (CGFloat)f.iconAlpha;
+    self.fullSnap.alpha = (CGFloat)f.full;
+
+    BOOL show = f.op >= 0.01 && f.body.w >= 90 && f.body.h > 1;
+    double pc = fmax(f.pc, 0.001);
+    double bcx = f.body.x + f.body.w / 2;
+    double ay = _geom.ay;
+    double anchorY = f.body.y + ay * f.body.h;
+    double fcx = CGRectGetMidX(_F);
+    for (LGRow *r in self.rows) {
+        r.holder.hidden = !show;
+        if (!show) continue;
+        // hàng giữ nguyên khoảng cách tới điểm neo của thân, và nằm chính giữa bề rộng thân hiện tại (như bản Flutter)
+        double cx = bcx + (CGRectGetMidX(r.rect) - fcx) - _R.origin.x;
+        double cy = anchorY + (CGRectGetMidY(r.rect) - _geom.a1y) - _R.origin.y;
+        r.holder.position = CGPointMake(cx, cy);
+        r.holder.transform = CATransform3DMakeScale(pc, pc, 1);
+        double all = f.op * (1 - f.full);
+        if (r.blur) {
+            r.sharp.opacity = (float)(all * (1 - f.blurMix));
+            r.blur.opacity = (float)(all * f.blurMix);
+        } else {
+            r.sharp.opacity = (float)all;
+        }
+    }
     [CATransaction commit];
-    CGPathRelease(p);
+    CGPathRelease(P);
+    CGPathRelease(outside);
 }
+
+// ---------------------------------------------------------------- đồng hồ
+- (void)tick:(CADisplayLink *)l {
+    if (self != gSession) { [l invalidate]; return; }
+    CFTimeInterval now = CACurrentMediaTime();
+    double dt = fmin(fmax(now - _lastT, 0), 0.05);
+    _lastT = now;
+    _ticks++;
+    BOOL alive = self.container.window && self.body.window;
+    if (self.state != LGStSettling) [self keepSourcesHidden];
+
+    switch (self.state) {
+        case LGStOpening:
+            if (!alive) { [self startClose:@"menu biến mất khi đang mở"]; return; }
+            _tau += dt * LGP.speed;
+            [self pinBody];
+            if (_tau >= _spec.dur) { [self finishOpen]; return; }
+            [self renderAt:_tau];
+            break;
+        case LGStOpen:
+            if (!alive) { [self startClose:@"menu bị gỡ khỏi window"]; return; }
+            if ([self systemDismissing]) { [self startClose:@"hệ thống đang đóng menu"]; return; }
+            [self checkContent];
+            [self pinBody];
+            break;
+        case LGStClosing:
+            _tau -= dt * LGP.speed * _spec.dur / LGP.closeDur;
+            if (_tau <= 0) { [self finishClose]; return; }
+            [self renderAt:_tau];
+            break;
+        case LGStSettling: {
+            if (!self.container.window) { [self finishAll:@"menu đã gỡ hẳn"]; return; }
+            double a, sc;
+            [self measureAlpha:&a scale:&sc];
+            // menu vẫn nằm trong window nhưng đã mờ hẳn (hệ thống không gỡ mà chỉ ẩn) = đã đóng
+            if (a < 0.05) { [self finishAll:@"menu đã mờ hẳn (còn trong window)"]; return; }
+            if (now - _settleT > 0.7) { [self resumeOpen]; return; }
+            break;
+        }
+        case LGStDone:
+            [l invalidate];
+            break;
+    }
+}
+
+- (void)keepSourcesHidden {
+    if (!LGP.hideSource) return;
+    for (UIView *v in self.sources) {
+        CALayer *pl = v.layer.presentationLayer;
+        if (v.alpha > 0.001 || (pl && pl.opacity > 0.01)) {
+            [v.layer removeAllAnimations];
+            v.alpha = 0;
+        }
+    }
+}
+
+- (void)restoreSources {
+    if (!LGP.hideSource) return;
+    for (NSUInteger i = 0; i < self.sources.count && i < self.srcAlpha.count; i++) self.sources[i].alpha = (CGFloat)self.srcAlpha[i].doubleValue;
+}
+
+// Giữ menu thật đúng chỗ đã dời (hệ thống có thể đặt lại vị trí khi chạm / kéo).
+- (void)pinBody {
+    UIView *b = self.body;
+    UIView *host = b.superview;
+    if (!b || !host) return;
+    CGPoint cur = [host convertPoint:b.center toView:nil];
+    double dx = CGRectGetMidX(_F) - cur.x, dy = CGRectGetMidY(_F) - cur.y;
+    if (fabs(dx) < 0.5 && fabs(dy) < 0.5) return;
+    CGPoint a = [host convertPoint:CGPointZero fromView:nil];
+    CGPoint c = [host convertPoint:CGPointMake(dx, dy) fromView:nil];
+    b.center = CGPointMake(b.center.x + (c.x - a.x), b.center.y + (c.y - a.y));
+    _pinFix++;
+    if (_pinFix <= 6 || _pinFix % 120 == 0) LGLog(@"pin: lệch (%+.1f,%+.1f) -> chỉnh lại (lần %d, state=%ld)", dx, dy, _pinFix, (long)self.state);
+}
+
+// Nội dung menu đổi (vd mở menu con): ghi log + chụp lại, cập nhật khung cho lúc đóng.
+- (void)checkContent {
+    if (_ticks % 3) return;
+    UIView *b = self.body;
+    if (!b) return;
+    NSString *sig = LGLabelSig(b);
+    CGSize sz = b.bounds.size;
+    BOOL sizeChanged = fabs(sz.width - _bodySize.width) > 1 || fabs(sz.height - _bodySize.height) > 1;
+    if ([sig isEqualToString:_labelSig] && !sizeChanged) return;
+    LGLog(@"NỘI DUNG ĐỔI: size %@ -> %@, chữ: %@", NSStringFromCGSize(_bodySize), NSStringFromCGSize(sz), sig);
+    _bodySize = sz;
+    _labelSig = sig;
+    CGPoint cur = [b.superview convertPoint:b.center toView:nil];
+    _F = CGRectMake(cur.x - sz.width / 2, cur.y - sz.height / 2, sz.width, sz.height);
+    _geom.W = sz.width;
+    _geom.H = sz.height;
+    _geom.a1x = _F.origin.x + _geom.ax * _F.size.width;
+    _geom.a1y = _F.origin.y + _geom.ay * _F.size.height;
+    [b layoutIfNeeded];
+    NSMutableArray<UILabel *> *labels = [NSMutableArray new];
+    LGLabels(b, labels);
+    UIView *content = labels.count ? LGLCAOf(labels) : nil;
+    if (!content || content == self.container) content = b;
+    self.content = content;
+    [self buildContent];
+    if (LGP.dump) LGLogTree(@"menu sau khi đổi nội dung", self.container);
+    [self captureBaseline];
+}
+
+// ---------------------------------------------------------------- phát hiện hệ thống đóng menu
+- (void)measureAlpha:(double *)aOut scale:(double *)sOut {
+    double minA = 1, minS = 1;
+    for (UIView *v = self.body; v && ![v isKindOfClass:UIWindow.class]; v = v.superview) {
+        CALayer *pl = v.layer.presentationLayer ?: v.layer;
+        double al = fmin((double)pl.opacity, (double)v.alpha);
+        if (v.hidden && v != self.body) al = 0;     // body.hidden do chính ta điều khiển nên không tính
+        minA = fmin(minA, al);
+        CGAffineTransform t = pl.affineTransform;
+        minS = fmin(minS, hypot(t.a, t.b));
+    }
+    *aOut = minA;
+    *sOut = minS;
+}
+
+- (void)captureBaseline {
+    [self measureAlpha:&_baseA scale:&_baseS];
+}
+
+- (NSUInteger)insideTouchCount {
+    NSUInteger n = 0;
+    for (UITouch *t in gTouches.keyEnumerator) if ([[gTouches objectForKey:t] boolValue]) n++;
+    return n;
+}
+
+- (BOOL)systemDismissing {
+    double a, s;
+    [self measureAlpha:&a scale:&s];
+    NSString *sig = [NSString stringWithFormat:@"A=%.2f S=%.2f", a, s];
+    if (LGP.debug && ![sig isEqualToString:_lastWatch]) {
+        LGLog(@"theo dõi: %@ (nền %.2f / %.2f)", sig, _baseA, _baseS);
+        _lastWatch = sig;
+    }
+    if ([self insideTouchCount] > 0) return NO;
+    return a < _baseA - 0.08 || s < _baseS - 0.04;
+}
+
+// ---------------------------------------------------------------- chuyển trạng thái
+- (void)finishOpen {
+    _tau = _spec.dur;
+    [self renderAt:_tau];
+    self.body.hidden = NO;       // cùng một khung hình: lớp phủ tắt, menu thật hiện
+    self.ow.hidden = YES;
+    self.state = LGStOpen;
+    [self captureBaseline];
+    LGLog(@"MỞ XONG (menu thật hiện lại) nền A=%.2f S=%.2f pin=%d", _baseA, _baseS, _pinFix);
+}
+
+- (void)startClose:(NSString *)why {
+    if (self.state != LGStOpening && self.state != LGStOpen) return;
+    LGLog(@"ĐÓNG: %@ (tau=%.3f)", why, _tau);
+    if (!LGP.closeAnim || !self.ow) { [self finishClose]; return; }
+    if (self.state == LGStOpen) {
+        _tau = _spec.dur;
+        [self renderAt:_tau];
+        self.ow.hidden = NO;
+    }
+    self.body.hidden = YES;      // (menu thật đang bị hệ thống đóng, lớp phủ của ta thay thế nó)
+    self.state = LGStClosing;
+    _lastT = CACurrentMediaTime();
+}
+
+- (void)finishClose {
+    [self restoreSources];
+    self.ow.hidden = YES;
+    self.state = LGStSettling;
+    _settleT = CACurrentMediaTime();
+    LGLog(@"ĐÓNG XONG (trả lại nút), container %@", self.container.window ? @"còn trong window (chờ hệ thống gỡ)" : @"đã gỡ");
+    if (!self.container.window) [self finishAll:@"menu đã gỡ"];
+}
+
+// Hệ thống không gỡ menu sau khi ta đóng xong (chạm ngoài mà menu vẫn mở): trả menu lại như cũ.
+- (void)resumeOpen {
+    UIView *b = self.body;
+    LGLog(@"menu vẫn còn sau %.1f s -> khôi phục trạng thái mở", CACurrentMediaTime() - _settleT);
+    if (!b || !b.window) { [self finishAll:@"không còn menu"]; return; }
+    double a, sc;
+    [self measureAlpha:&a scale:&sc];
+    if (a < 0.5) {     // menu còn trong cây view nhưng không nhìn thấy: không được ẩn nút nữa
+        [self finishAll:[NSString stringWithFormat:@"menu còn trong window nhưng mờ (alpha=%.2f)", a]];
+        return;
+    }
+    if (LGP.hideSource) {
+        for (UIView *v in self.sources) { [v.layer removeAllAnimations]; v.alpha = 0; }
+    }
+    b.hidden = NO;
+    [self pinBody];
+    self.state = LGStOpen;
+    [self captureBaseline];
+}
+
+- (void)finishAll:(NSString *)why {
+    if (self.state == LGStDone) return;
+    LGLog(@"KẾT THÚC phiên: %@", why);
+    [self.link invalidate];
+    self.link = nil;
+    [self restoreSources];
+    self.ow.hidden = YES;
+    self.ow = nil;
+    self.reg = nil;
+    self.state = LGStDone;
+    [gTouches removeAllObjects];
+    if (gSession == self) gSession = nil;
+}
+
+// Dừng ngay không animation, trả mọi thứ về nguyên trạng.
+- (void)abort:(NSString *)why {
+    if (self.state == LGStDone) return;
+    LGLog(@"HỦY phiên: %@ (state=%ld)", why, (long)self.state);
+    if (self.state == LGStOpening || self.state == LGStOpen) self.body.hidden = NO;
+    [self finishAll:why];
+}
+
+// ---------------------------------------------------------------- chạm
++ (void)touch:(UITouch *)t {
+    LGMenuMorph *m = gSession;
+    if (!m || m.state == LGStDone) return;
+    [m handleTouch:t];
+}
+
+- (void)handleTouch:(UITouch *)t {
+    if (!gTouches) gTouches = [NSMapTable weakToStrongObjectsMapTable];
+    CGPoint p = [t locationInView:nil];
+    switch (t.phase) {
+        case UITouchPhaseBegan: {
+            BOOL inside = CGRectContainsPoint(_F, p);
+            [gTouches setObject:@(inside) forKey:t];
+            LGLog(@"chạm xuống %@ (%@) state=%ld", NSStringFromCGPoint(p), inside ? @"trong menu" : @"ngoài menu", (long)self.state);
+            if (self.state == LGStOpen && self.container.window && self.content.window && ![self systemDismissing]) {
+                // chụp lại nội dung đúng lúc này (trước khi hệ thống kịp đóng) để dùng làm khung đầu của animation đóng
+                UIView *s = [self.content snapshotViewAfterScreenUpdates:NO];
+                if (s) {
+                    [self.fullSnap removeFromSuperview];
+                    s.frame = CGRectOffset(_contentF, -_R.origin.x, -_R.origin.y);
+                    s.alpha = 0;
+                    [self.clip addSubview:s];
+                    self.fullSnap = s;
+                }
+            }
+            break;
+        }
+        case UITouchPhaseEnded:
+        case UITouchPhaseCancelled: {
+            NSNumber *was = [gTouches objectForKey:t];
+            [gTouches removeObjectForKey:t];
+            if (!was) break;
+            LGLog(@"chạm lên %@ (bắt đầu %@) phase=%ld", NSStringFromCGPoint(p), was.boolValue ? @"trong menu" : @"ngoài menu", (long)t.phase);
+            if (!was.boolValue && t.phase == UITouchPhaseEnded) [self startClose:@"chạm ngoài menu"];
+            break;
+        }
+        default: break;
+    }
+}
+
 @end
