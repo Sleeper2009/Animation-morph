@@ -1,9 +1,9 @@
-Package: com.yourname.liquidmenu
+Package: com.fujb-2009.liquidmenu
 Name: LiquidMenu
-Version: 0.1.0
+Version: 0.0.1
 Architecture: iphoneos-arm64
-Description: Metaball liquid-glass morph animation for UIMenu / context-menu buttons
-Maintainer: you
-Author: you
+Description: Thêm Animation vào các nút
+Maintainer: fujb
+Author: fujb
 Section: Tweaks
 Depends: mobilesubstrate (>= 0.9.5000)
