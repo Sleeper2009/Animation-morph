@@ -66,7 +66,7 @@ static NSString *LGStamp(void) {
     NSDate *d = [NSDate dateWithTimeIntervalSinceReferenceDate:gWall0 + dt];
     static NSDateFormatter *fmt;
     if (!fmt) { fmt = [NSDateFormatter new]; fmt.dateFormat = @"HH:mm:ss.SSS"; }
-    return [NSString stringWithFormat:@"%@ [%d]", [fmt stringFromDate:d], (int)getpid()];
+    return [NSString stringWithFormat:@"%@ [%d %@]", [fmt stringFromDate:d], (int)getpid(), NSBundle.mainBundle.bundleIdentifier ?: @"?"];
 }
 
 void LGLog(NSString *fmt, ...) {
