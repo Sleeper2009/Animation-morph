@@ -111,9 +111,27 @@ static UIImage *LGImageOf(UIView *v, CGFloat scale) {
     fm.opaque = NO;
     fm.scale = scale;
     UIGraphicsImageRenderer *r = [[UIGraphicsImageRenderer alloc] initWithSize:sz format:fm];
+    // renderInContext: vẽ thẳng cây layer của view bằng CPU (trạng thái model): không cần view đang hiện trên màn hình,
+    // nên vẫn chụp được khi container đang bị ẩn bằng layer.hidden để không lộ khung hình của menu hệ thống.
     return [r imageWithActions:^(UIGraphicsImageRendererContext *c) {
-        if (![v drawViewHierarchyInRect:v.bounds afterScreenUpdates:NO]) [v.layer renderInContext:c.CGContext];
+        [v.layer renderInContext:c.CGContext];
     }];
+}
+
+// Tỉ lệ ô có "mực" (alpha > 0) của ảnh, để log biết ảnh chụp có bị trống không.
+static double LGInk(UIImage *img) {
+    if (!img.CGImage) return 0;
+    enum { W = 48, H = 48 };
+    uint8_t buf[W * H];
+    memset(buf, 0, sizeof buf);
+    CGContextRef c = CGBitmapContextCreate(buf, W, H, 8, W, NULL, (CGBitmapInfo)kCGImageAlphaOnly);
+    if (!c) return 0;
+    CGContextSetInterpolationQuality(c, kCGInterpolationMedium);
+    CGContextDrawImage(c, CGRectMake(0, 0, W, H), img.CGImage);
+    CGContextRelease(c);
+    int n = 0;
+    for (int i = 0; i < W * H; i++) if (buf[i]) n++;
+    return (double)n / (W * H);
 }
 
 static CIContext *gCI;
@@ -295,12 +313,6 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
 
     [self buildOverlayFor:win];
     [self buildContent];
-    if (LGP.dump) {
-        LGLogTree(@"menu (container) lúc mới xuất hiện", container);
-        UIView *s0 = srcs.firstObject;
-        if (s0) LGLogTree(@"nút nguồn (cha của nút)", s0.superview ?: s0);
-        dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{ LGLogClassesOnce(); });
-    }
     return YES;
 }
 
@@ -399,14 +411,29 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
     self.rimL = rl;
 }
 
-// Chụp nội dung thật (hàng, ảnh toàn bộ, icon nút). Gọi khi menu thật còn nhìn thấy.
+// Ảnh toàn bộ nội dung menu thật (không gồm nền kính), đặt đúng khung cuối trong hệ toạ độ của `clip`.
+- (UIView *)contentImageView {
+    UIView *content = self.content;
+    if (!content) return nil;
+    CGFloat scale = content.window.screen.scale ?: UIScreen.mainScreen.scale;
+    UIImage *img = LGImageOf(content, scale);
+    if (!img) return nil;
+    LGLog(@"  ảnh toàn bộ nội dung %@ mực=%.3f", NSStringFromCGSize(content.bounds.size), LGInk(img));
+    UIImageView *iv = [[UIImageView alloc] initWithImage:img];
+    iv.userInteractionEnabled = NO;
+    iv.alpha = 0;
+    return iv;
+}
+
+// Chụp nội dung thật (hàng, ảnh toàn bộ). Không cần menu đang hiện trên màn hình (chụp bằng CPU).
 - (void)buildContent {
     UIView *body = self.body, *content = self.content;
     if (!body || !content) return;
     CGFloat scale = body.window.screen.scale ?: UIScreen.mainScreen.scale;
 
     // ảnh toàn bộ nội dung: dùng để bàn giao sang menu thật không bị giật (và làm khung đầu của lúc đóng)
-    UIView *snap = [content snapshotViewAfterScreenUpdates:YES];   // YES: cũng chốt luôn mọi thay đổi chờ xử lý
+    [body layoutIfNeeded];
+    UIView *snap = [self contentImageView];
     [self.fullSnap removeFromSuperview];
     self.fullSnap = snap;
     CGRect bodyW = LGWinRect(body);
@@ -425,6 +452,8 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
     for (UIView *v in LGRowViews(body, content)) {
         UIImage *img = LGImageOf(v, scale);
         if (!img.CGImage) continue;
+        double ink = LGInk(img);
+        if (ink < 0.0005) LGLog(@"  ẢNH HÀNG TRỐNG (%s %@)", object_getClassName(v), NSStringFromCGSize(v.bounds.size));
         LGRow *row = [LGRow new];
         row.rect = CGRectOffset(LGWinRect(v), off.x, off.y);
         CALayer *h = [CALayer layer];
@@ -470,10 +499,14 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
     // dời menu thật tới chỗ đã tính (đè lên nút) rồi ẩn: lớp phủ của ta thay thế nó trong lúc morph
     [self pinBody];
     body.hidden = YES;
+    self.container.layer.hidden = NO;     // Tweak.x đã ẩn container ngay lúc nó xuất hiện (để không lộ menu hệ thống); từ giờ chỉ ẩn thân menu
     if (LGP.hideSource) {
         self.srcAlpha = [NSMutableArray new];
         for (UIView *v in self.sources) {
-            [self.srcAlpha addObject:@(v.alpha < 0.05 ? 1.0 : v.alpha)];
+            // nút đang được nhấn thì alpha tạm bị làm mờ: khi trả lại phải là 1, không phải giá trị mờ đó
+            BOOL pressed = [v isKindOfClass:UIControl.class] && ((UIControl *)v).highlighted;
+            [self.srcAlpha addObject:@((v.alpha < 0.05 || pressed) ? 1.0 : v.alpha)];
+            LGLog(@"  ẩn nút %s alpha=%.2f highlighted=%d", object_getClassName(v), v.alpha, (int)pressed);
             [v.layer removeAllAnimations];
             v.alpha = 0;
         }
@@ -484,6 +517,20 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
     _lastT = CACurrentMediaTime();
     self.link = [CADisplayLink displayLinkWithTarget:self selector:@selector(tick:)];
     [self.link addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
+    LGLog(@"  morph bắt đầu; body sau khi dời: rect=%@ anchorPoint=%@ F=%@ cửa sổ menu level=%.0f", NSStringFromCGRect(LGWinRect(body)),
+          NSStringFromCGPoint(body.layer.anchorPoint), NSStringFromCGRect(_F), (double)body.window.windowLevel);
+    if (LGP.dump) {
+        // ghi cây view SAU khung hình đầu để không làm chậm animation (thân menu hiện đang HIDDEN do ta ẩn)
+        __weak LGMenuMorph *weakSelf = self;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            LGMenuMorph *m = weakSelf;
+            if (!m || !m.container) return;
+            LGLogTree(@"menu (container) - thân đã bị ta ẩn", m.container);
+            UIView *s0 = m.sources.firstObject;
+            if (s0) LGLogTree(@"nút nguồn (cha của nút)", s0.superview ?: s0);
+        });
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{ LGLogClassesOnce(); });
+    }
 }
 
 // ---------------------------------------------------------------- khung hình
@@ -598,14 +645,20 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
     UIView *b = self.body;
     UIView *host = b.superview;
     if (!b || !host) return;
+    // b.center = layer.position = vị trí của ĐIỂM NEO (anchorPoint) chứ không nhất thiết là tâm hình học:
+    // hệ thống có thể đặt anchorPoint ở góc (vd (1,0)) để menu bung ra từ góc. Vì vậy so điểm neo với điểm neo.
+    CGPoint ap = b.layer.anchorPoint;
     CGPoint cur = [host convertPoint:b.center toView:nil];
-    double dx = CGRectGetMidX(_F) - cur.x, dy = CGRectGetMidY(_F) - cur.y;
+    CGPoint tgt = CGPointMake(_F.origin.x + ap.x * _F.size.width, _F.origin.y + ap.y * _F.size.height);
+    double dx = tgt.x - cur.x, dy = tgt.y - cur.y;
     if (fabs(dx) < 0.5 && fabs(dy) < 0.5) return;
     CGPoint a = [host convertPoint:CGPointZero fromView:nil];
     CGPoint c = [host convertPoint:CGPointMake(dx, dy) fromView:nil];
     b.center = CGPointMake(b.center.x + (c.x - a.x), b.center.y + (c.y - a.y));
     _pinFix++;
-    if (_pinFix <= 6 || _pinFix % 120 == 0) LGLog(@"pin: lệch (%+.1f,%+.1f) -> chỉnh lại (lần %d, state=%ld)", dx, dy, _pinFix, (long)self.state);
+    if (_pinFix <= 6 || _pinFix % 120 == 0)
+        LGLog(@"pin: lệch (%+.1f,%+.1f) -> chỉnh lại (lần %d, state=%ld) anchorPoint=%@ F=%@ rect thật sau chỉnh=%@", dx, dy, _pinFix,
+              (long)self.state, NSStringFromCGPoint(ap), NSStringFromCGRect(_F), NSStringFromCGRect(LGWinRect(b)));
 }
 
 // Nội dung menu đổi (vd mở menu con): ghi log + chụp lại, cập nhật khung cho lúc đóng.
@@ -620,8 +673,9 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
     LGLog(@"NỘI DUNG ĐỔI: size %@ -> %@, chữ: %@", NSStringFromCGSize(_bodySize), NSStringFromCGSize(sz), sig);
     _bodySize = sz;
     _labelSig = sig;
+    CGPoint ap = b.layer.anchorPoint;
     CGPoint cur = [b.superview convertPoint:b.center toView:nil];
-    _F = CGRectMake(cur.x - sz.width / 2, cur.y - sz.height / 2, sz.width, sz.height);
+    _F = CGRectMake(cur.x - ap.x * sz.width, cur.y - ap.y * sz.height, sz.width, sz.height);
     _geom.W = sz.width;
     _geom.H = sz.height;
     _geom.a1x = _F.origin.x + _geom.ax * _F.size.width;
@@ -767,11 +821,10 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
             LGLog(@"chạm xuống %@ (%@) state=%ld", NSStringFromCGPoint(p), inside ? @"trong menu" : @"ngoài menu", (long)self.state);
             if (self.state == LGStOpen && self.container.window && self.content.window && ![self systemDismissing]) {
                 // chụp lại nội dung đúng lúc này (trước khi hệ thống kịp đóng) để dùng làm khung đầu của animation đóng
-                UIView *s = [self.content snapshotViewAfterScreenUpdates:NO];
+                UIView *s = [self contentImageView];
                 if (s) {
                     [self.fullSnap removeFromSuperview];
                     s.frame = CGRectOffset(_contentF, -_R.origin.x, -_R.origin.y);
-                    s.alpha = 0;
                     [self.clip addSubview:s];
                     self.fullSnap = s;
                 }
