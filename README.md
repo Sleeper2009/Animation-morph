@@ -1,58 +1,68 @@
-# LiquidMenu (Theos tweak)
+# LiquidMenu v3 (Theos tweak) — bản thử nghiệm
 
-Animation mở menu kiểu metaball: nút "…" tách thành giọt, thân menu lớn ra từ nút, nội dung phóng to sau.
+Thay animation mở/đóng menu của nút (UIButton menu) bằng morph kiểu metaball theo bản Flutter mẫu.
+Từ v3.2 chạy **toàn hệ thống**: `LiquidMenu.plist` lọc `com.apple.UIKit` nên tweak được nạp vào mọi app dùng UIKit
+(SpringBoard mặc định TẮT, xem bên dưới). Chưa kiểm thử ngoài Ghi chú: nếu một app lỗi, thêm bundle id của app đó vào `excludeApps`.
+Muốn quay lại chỉ thử Ghi chú: sửa `LiquidMenu.plist` theo chú thích trong file, hoặc đặt `onlyApps = [com.apple.mobilenotes]` trong plist tuỳ chọn.
 
-## Build bằng GitHub Actions (không cần máy Mac)
-1. Tạo repo mới trên github.com, đưa **toàn bộ file trong thư mục này** lên (Makefile nằm ở gốc repo, cạnh `Tweak.x`).
-   Thư mục `.github` là thư mục ẩn (bắt đầu bằng dấu chấm) nên Finder/trình duyệt hay không hiện hoặc không kéo thả được.
-   Nếu thiếu, tạo tay: **Add file → Create new file**, gõ tên `.github/workflows/build.yml` (gõ dấu `/` sẽ tự tạo thư mục) rồi dán nội dung file đó vào.
-2. Vào tab **Actions**. Workflow **Build .deb** tự chạy mỗi lần push, hoặc bấm **Run workflow** để chạy tay.
-3. Chạy xong (vài phút) mở lần chạy đó, kéo xuống **Artifacts**:
-   - `LiquidMenu-rootless`: cho jailbreak rootless (Dopamine, palera1n rootless...).
-   - `LiquidMenu-rootful`: cho jailbreak rootful (checkra1n, unc0ver, Taurine...).
-   Mỗi artifact là một file zip chứa file `.deb`.
-4. Muốn tải thẳng `.deb` từ iPhone không cần đăng nhập: đẩy một tag dạng `v0.1.0`
-   (`git tag v0.1.0 && git push origin v0.1.0`, hoặc **Releases → Draft a new release** và đặt tag). `.deb` sẽ được đính vào trang Releases.
-5. Cài `.deb` bằng Sileo/Filza/`dpkg -i`, rồi mở lại app đích.
+## Build bằng GitHub Actions
+Giống bản trước: đưa **toàn bộ file** lên repo (Makefile nằm ở gốc, cạnh `Tweak.x`), workflow `.github/workflows/build.yml`
+tự build; tải `.deb` ở **Actions → Artifacts** (`LiquidMenu-rootless`). Cài bằng Sileo/Filza rồi mở lại Ghi chú.
 
-Workflow không build RootHide. Nếu lỗi biên dịch, mở bước **Build** trong log và gửi nội dung lỗi.
+**File MỚI so với v2** (phải thêm vào repo): `LGTimeline.h`, `LGLog.h`, `LGLog.m`.
+**File đổi**: `Tweak.x`, `LGMenuMorph.h`, `LGMenuMorph.m`, `LGMetaball.h`, `LGMetaball.c`, `Makefile`, `README.md`
+(`LGPlan.h` giữ nguyên nội dung, đưa lên lại cũng được).
 
-## Build tay trên máy có Theos
-1. Cài Theos (có `$THEOS`), SDK iOS.
-2. `make clean package` -> file .deb trong `packages/` (mặc định rootless).
-   Rootful: đổi `Architecture` trong `control` thành `iphoneos-arm`, rồi `make clean package THEOS_PACKAGE_SCHEME=`.
-3. (Tuỳ chọn) đổi `com.yourname.liquidmenu` trong `control` và `kPrefs` trong `Tweak.x`. Hai chỗ này không bắt buộc để build, chỉ cần khớp nhau nếu bạn dùng file plist cấu hình bên dưới.
+## Đã làm trong bản này
+- **Mở** đúng timeline Flutter: icon nút biến mất ~12 ms và thay bằng khối kính; thân neo góc trên-phải, lớn lên bằng spring (ω=29),
+  điểm neo đứng yên ~124 ms rồi trượt về góc trên-phải của nút (menu cuối đè lên nút); chấm nút co lại và dính vào thân bằng metaball
+  (độ dính 24 → 0 tới 0,24 s); bo góc 150 → bo cuối; **từng hàng** phóng 0 → 1 quanh tâm hàng, chữ hiện từ mờ sang nét.
+- **Đóng** = timeline mở chạy ngược, 380 ms. Nút chỉ hiện lại ở khung cuối.
+- **Hai nút liền nhau** (vd chia sẻ + "…") gộp thành **một viên thuốc** làm hình xuất phát; menu neo vào góc trên-phải của viên thuốc.
+  Mọi nút trong nhóm bị ẩn suốt lúc menu mở.
+- **Cách đóng**: chạm bất cứ đâu ngoài các mục; chạm một mục (kể cả mục mở trang khác như "Xem tệp đính kèm"); hoặc hệ thống tự đóng
+  → đều chạy animation đóng.
+- Khối kính dựng trong **một UIWindow riêng** nằm trên cùng (nên animation đóng vẫn chạy khi hệ thống đã gỡ menu), có blur + lớp phủ màu + bóng + viền mảnh
+  để nhìn thấy cả trên nền trắng của Ghi chú. Menu thật bị ẩn trong lúc morph và hiện lại ở khung cuối (có bước chuyển mờ từ ảnh chụp để không giật).
+- Menu thật được giữ đúng chỗ (`center` + kiểm tra mỗi khung hình), nên chạm nhẹ không làm tấm menu bị tụt xuống.
+- Chỉ menu mở từ **nút** mới có animation; menu nhấn giữ lên ghi chú/thư mục (không bắt đầu từ nút) thì bỏ qua.
 
-## Cách hoạt động
-- Hook `-[UIApplication sendEvent:]` để biết nút nào vừa được chạm.
-- Hook `-[UIView didMoveToWindow]`: khi view có tên class chứa một chuỗi trong `hints` xuất hiện ngay sau lúc chạm
-  -> coi là menu. Lấy view NGOÀI CÙNG vẫn khớp `hints` làm container, rồi tìm thân menu (tổ tiên chung của các UILabel).
-- Ẩn menu thật, dựng vỏ kính riêng (UIGlassEffect nếu có, không thì blur), cắt bằng mask metaball do CADisplayLink cập nhật mỗi khung.
-- Cuối animation hiện lại menu thật (vẫn bấm được).
-- Mặc định chỉ inject vào app Ghi chú (xem `LiquidMenu.plist`) để thử an toàn.
+## Chưa làm (vòng sau)
+- **Menu con** (chạm một mục mở menu khác: ẩn menu trước, hiện menu mới lên trên, đóng bằng animation đóng). Bản này **chỉ ghi log**
+  khi nội dung menu đổi (dòng `NỘI DUNG ĐỔI` + cây view) để vòng sau làm cho đúng.
+- SpringBoard (Trung tâm điều khiển, menu màn hình khoá...) chưa hỗ trợ; Tweak mặc định không đụng tới nó.
+- Nội dung là ảnh chụp từng hàng nên chữ không tự xuống dòng theo bề rộng lúc còn hẹp như bản Flutter (bị cắt theo hình khối).
 
-## Tên class private KHÔNG được kiểm chứng
-Mặc định dò theo chuỗi `ContextMenu`, `_UIMenu`, `MenuContainer`. Nếu không thấy gì xảy ra:
-1. Tạo `/var/jb/var/mobile/Library/Preferences/com.yourname.liquidmenu.plist` (rootful: `/var/mobile/Library/Preferences/...`) với `debug = true`.
-2. Mở app, bấm nút "…", xem log (`oslog`/Console) lọc `LiquidMenu`:
-   - các dòng `+ClassName` là mọi view vừa xuất hiện;
-   - dòng `morph container=… body=…` cho biết view nào được chọn làm container / thân menu;
-   - dòng `bỏ qua: container=… content=… body=…` cho biết vì sao không morph (không tìm được thân menu);
-   - dòng `body.transform != identity` nghĩa là hệ thống để menu ở trạng thái đầu lúc ta chụp, và đã được reset về identity.
-3. Đưa tên class đúng của view ngoài cùng của menu vào mảng `hints` trong plist.
-   `hints` cũng quyết định chạm nào được coi là "chạm trong menu" (không được tính là nút nguồn).
+## LOG (quan trọng cho vòng sau)
+Bản này **bật log sẵn** (không cần plist); log chỉ được ghi khi có sự kiện menu, mỗi dòng có bundle id của app. Cây view/danh sách class (nặng) mặc định chỉ ghi ở Ghi chú; app khác muốn ghi thì đặt `dump = true`. Tweak ghi nhật ký vào tối đa 3 file tên `LiquidMenu.log` ở những chỗ ghi được trong Ghi chú:
+thư mục `tmp` và `Library/Caches` của chính app Ghi chú, `/var/mobile/Library/Caches/`, `/var/mobile/Documents/`, `/var/tmp/`, `/tmp/`.
+Đường dẫn thật được ghi ở **dòng đầu tiên của log** (`LiquidMenu v3 khởi động … log: …`) và cả trong oslog.
+
+Cách tìm bằng Filza: vào `/var/mobile/Containers/Data/Application/` rồi dùng ô tìm kiếm với từ khoá `LiquidMenu.log`
+(hoặc xem thẳng `/var/mobile/Library/Caches/LiquidMenu.log`, `/var/tmp/LiquidMenu.log`). Lấy file mới nhất, gửi cả file.
+Log có: cây view của menu và của nút ngay khi xuất hiện, danh sách class/method liên quan menu, mọi lần chạm, từng chuyển trạng thái
+(BẮT ĐẦU → MỞ XONG → ĐÓNG: lý do → ĐÓNG XONG → KẾT THÚC), các lần chỉnh vị trí menu (`pin`), và `theo dõi: A=… S=…`
+(độ mờ/độ thu nhỏ của menu thật khi hệ thống đóng nó).
+
+Mỗi lần thử nên: mở Ghi chú → mở menu "…" → đợi một chút → đóng (chạm ra ngoài) → mở lại → chạm một mục (vd Xem tệp đính kèm),
+rồi gửi log và video quay màn hình (nói rõ tweak kính iOS 26 đang bật hay tắt).
 
 ## Plist tuỳ chọn (không cần build lại)
-enabled, springboard (bool), debug (bool), hints (array string), useGlass (bool),
-omega, offsetDelay, contentDelay, dotOmega, dotDelay, radOmega, radDelay, blend, speed (số; speed 0.2 = chậm 5 lần để soi từng khung).
+`/var/jb/var/mobile/Library/Preferences/com.yourname.liquidmenu.plist` (đường dẫn qua `ROOT_PATH_NS`; không có file thì dùng mặc định).
+- bool: `enabled`, `springboard`, `debug` (log), `dump` (ghi cây view/class), `useGlass`, `coverButton`, `hideSource`, `groupButtons`, `blurText`, `closeAnim`
+- số: `omega`, `offsetDelay`, `contentDelay`, `dotOmega`, `dotDelay`, `radOmega`, `radDelay`, `blend`, `closeDur`, `speed` (0,2 = chậm 5 lần),
+  `tint`, `shadow`, `rim` (độ đậm lớp phủ / bóng / viền, 0–1), `material` (−1 = chép nền kính của menu thật; 0–4 = UltraThin…Chrome)
+- `onlyApps` (mảng bundle id: chỉ chạy trong các app này), `excludeApps` (mảng bundle id: bỏ qua các app này), `springboard` (bool, mặc định false)
+- `hints`: mảng chuỗi — tên class private của view menu (mặc định `ContextMenu`, `_UIMenu`, `MenuContainer`)
 
-Giá trị sai kiểu bị bỏ qua thay vì làm crash app đích. `hints` chỉ nhận chuỗi không rỗng (rỗng thì dùng mặc định).
-Số bị chặn về khoảng hợp lệ: `speed` 0.05–10, `omega`/`dotOmega`/`radOmega` ≥ 1, các delay và `blend` ≥ 0.
-Thời lượng tổng `dur` được tính từ các spring (delay + 8/omega, tối thiểu 0.5 s, tối đa 3 s), nên đổi `omega` thì menu thật không bị nhảy lúc hiện lại.
+Giá trị sai kiểu bị bỏ qua thay vì làm crash app đích; số bị chặn về khoảng hợp lệ.
 
-## Hạn chế
-- Chỉ animation mở; đóng menu vẫn là của hệ thống.
-- Nội dung scale cả khối (bản Flutter scale từng hàng và xuống dòng lại).
-- Bóng đổ của menu thật bị ẩn trong lúc morph.
-- Chưa được thử trên thiết bị: tên class private, thứ tự gọi `didMoveToWindow` và việc xoá animation hệ thống (`removeAllAnimations`) cần kiểm bằng `debug = true`.
-- `UIGlassEffect` đặt trên view cao bằng cả host rồi cắt bằng mask: viền và khúc xạ kính tính theo khung cả view, không theo hình morph, nên có thể trông phẳng hơn kính thật (đã có viền `rim` bù).
+## Các file
+`Tweak.x` (hook, nhận ra menu và nút nguồn, nhóm nút), `LGMenuMorph.h/.m` (phiên animation: cửa sổ phủ, khối kính, hàng, mở/đóng, giữ vị trí, phát hiện hệ thống đóng),
+`LGTimeline.h` (timeline Flutter, C thuần), `LGPlan.h` (hình học neo/dời menu), `LGMetaball.h/.c` (đường viền metaball cho cả viên thuốc),
+`LGLog.h/.m` (ghi log ra file), `LiquidMenu.plist` (filter app), `control`, `Makefile`.
+
+## Những điều chưa kiểm chứng được (không có thiết bị ở đây)
+Tên class private trên iOS 16.7.7; việc dời menu bằng `center` có giữ được khi hệ thống layout lại; hệ thống đóng menu có phát hiện được qua độ mờ/thu nhỏ không;
+UIVisualEffectView bị mask có blur mượt trên iPhone 8 Plus; cửa sổ phủ có blur được nền phía dưới. Toàn bộ mã đã biên dịch sạch với SDK iOS 16.5 thật và phần toán
+(timeline, metaball, hình học) đã test số học trên máy tính, nhưng hành vi trên máy thật phải dựa vào log vòng sau.
