@@ -582,6 +582,11 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
 
 // ---------------------------------------------------------------- đồng hồ
 - (void)tick:(CADisplayLink *)l {
+    @try { [self tickImpl:l]; }
+    @catch (NSException *ex) { LGLog(@"NGOẠI LỆ trong tick: %@ %@", ex.name, ex.reason); [self abort:@"ngoại lệ"]; }
+}
+
+- (void)tickImpl:(CADisplayLink *)l {
     if (self != gSession) { [l invalidate]; return; }
     CFTimeInterval now = CACurrentMediaTime();
     double dt = fmin(fmax(now - _lastT, 0), 0.05);
@@ -808,7 +813,8 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
 + (void)touch:(UITouch *)t {
     LGMenuMorph *m = gSession;
     if (!m || m.state == LGStDone) return;
-    [m handleTouch:t];
+    @try { [m handleTouch:t]; }
+    @catch (NSException *ex) { LGLog(@"NGOẠI LỆ trong handleTouch: %@ %@", ex.name, ex.reason); [m abort:@"ngoại lệ"]; }
 }
 
 - (void)handleTouch:(UITouch *)t {
