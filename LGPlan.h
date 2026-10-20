@@ -1,4 +1,4 @@
-l// Hình học của animation mở, theo bản Flutter. C thuần (không CoreGraphics) nên test được trên máy tính.
+// Hình học của animation mở, theo bản Flutter. C thuần (không CoreGraphics) nên test được trên máy tính.
 //
 // Bản Flutter: thân menu neo ở GÓC TRÊN-PHẢI, bắt đầu từ a0 = tâm nút + (1, 7), trượt tới
 // a1 = GÓC TRÊN-PHẢI CỦA NÚT; menu cuối cùng nằm ĐÈ LÊN nút.
