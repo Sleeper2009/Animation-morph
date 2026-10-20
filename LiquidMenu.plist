@@ -4,11 +4,12 @@
 <dict>
 	<key>Filter</key>
 	<dict>
-		<!-- Test an toàn: chỉ inject vào app Ghi chú. Khi ổn, thay bằng:
-		     <key>Bundles</key><array><string>com.apple.UIKit</string></array> -->
-		<key>Executables</key>
+		<!-- Toàn hệ thống: mọi app dùng UIKit. SpringBoard mặc định bị tắt trong Tweak.x (plist key springboard = true để bật).
+		     Muốn quay lại thử riêng Ghi chú, thay bằng:
+		     <key>Executables</key><array><string>MobileNotes</string></array> -->
+		<key>Bundles</key>
 		<array>
-			<string>MobileNotes</string>
+			<string>com.apple.UIKit</string>
 		</array>
 	</dict>
 </dict>
