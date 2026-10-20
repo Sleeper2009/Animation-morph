@@ -3,6 +3,7 @@
 #import <rootless.h>
 #import "LGMenuMorph.h"
 #import "LGLog.h"
+#import "LGRing.h"
 
 #define kPrefs @"/var/mobile/Library/Preferences/com.yourname.liquidmenu.plist"
 
@@ -15,6 +16,7 @@ static __weak UIView *gHidden;            // container đang bị ẩn tạm (la
 
 // Trả container về hiển thị bình thường (phiên morph tự bật lại khi bắt đầu; gọi thêm ở mọi đường thoát cho chắc).
 static void LGUnhide(void) {
+    LGPressFinish();     // mọi đường thoát (kể cả sau khi morph đã bắt đầu): trả nút/vòng về nguyên trạng, tắt hiệu ứng ấn
     UIView *c = gHidden;
     gHidden = nil;
     if (c) c.layer.hidden = NO;
@@ -45,7 +47,7 @@ static UIView *LGOutermost(UIView *v) {
     return top;
 }
 
-static BOOL LGButtonLike(UIView *v) { return [v isKindOfClass:UIControl.class] || LGNameHas(v, "Button"); }
+BOOL LGButtonLike(UIView *v) { return [v isKindOfClass:UIControl.class] || LGNameHas(v, "Button"); }
 
 // Từ view bị chạm đi lên tìm "nút". Không phải nút -> nil (menu mở bằng nhấn giữ vào ô/ghi chú... không có animation).
 static UIView *LGPickSource(UIView *v) {
@@ -66,7 +68,7 @@ static UIView *LGFirstButton(UIView *v, int depth) {
 }
 
 // Nhóm nút liền nhau cùng hàng (vd chia sẻ + "…" trên thanh điều hướng) -> gộp thành một viên thuốc.
-static NSArray<UIView *> *LGGroupFor(UIView *src) {
+NSArray<UIView *> *LGGroupFor(UIView *src) {
     NSMutableArray<UIView *> *group = [NSMutableArray arrayWithObject:src];
     if (!LGP.groupButtons) return group;
     CGRect u = [src convertRect:src.bounds toView:nil];
@@ -144,6 +146,9 @@ static void LGHandle(UIView *container, int attempt) {
         gBusy = NO;
         return;
     }
+    // Trả nút về trạng thái thật TRƯỚC khi dò nhóm nút (nút đang bị ẩn alpha = 0 sẽ bị LGGroupFor bỏ qua -> viên thuốc tụt thành một nút).
+    // Cửa sổ phủ của hiệu ứng ấn vẫn che bên trên cho tới khi morph hiện (LGUnhide ở cuối LGHandle mới tắt nó).
+    LGPressRestoreSources();
     NSArray<UIView *> *sources = LGGroupFor(s);
     NSMutableString *names = [NSMutableString string];
     for (UIView *v in sources) [names appendFormat:@"%s%@ ", object_getClassName(v), NSStringFromCGRect([v convertRect:v.bounds toView:nil])];
@@ -166,11 +171,14 @@ static void LGHandle(UIView *container, int attempt) {
     if (gEnabled && e.type == UIEventTypeTouches) {
         for (UITouch *t in e.allTouches) {
             [LGMenuMorph touch:t];     // chạm ngoài menu -> đóng (làm TRƯỚC %orig để lớp phủ lên trước khi hệ thống kịp đóng)
+            if (t.phase == UITouchPhaseEnded || t.phase == UITouchPhaseCancelled) LGPressRelease();
             if (t.phase != UITouchPhaseBegan) continue;
             if (t.view && !LGInMenu(t.view)) {
                 gSource = LGPickSource(t.view);
                 gTouch = [t locationInView:nil];
                 gSourceT = CACurrentMediaTime();
+                // lóe sáng + phóng to ngay khi chạm xuống nút (TRƯỚC %orig: nút chưa bị làm mờ vì highlight)
+                if (LGP.press && gSource && ![LGMenuMorph isActive] && LGRingIsCandidate(gSource)) LGPressBegin(LGGroupFor(gSource));
             }
         }
     }
@@ -185,8 +193,11 @@ static void LGHandle(UIView *container, int attempt) {
     const char *n = object_getClassName(self);
     if (!self.window) {
         if (LGLogOn && LGMatchName(n)) LGLog(@"-%s (bị gỡ khỏi window)", n);
+        if (LGButtonLike(self)) LGRingDetach(self);
         return;
     }
+    // vòng cố định quanh nút mở menu (độc lập với việc vừa chạm hay chưa)
+    if (LGP.ring && LGButtonLike(self) && !LGInMenu(self) && LGRingIsCandidate(self)) LGRingSchedule(self);
     if (CACurrentMediaTime() - gSourceT > 1.5) return;
     if (!LGMatchName(n)) return;
     UIView *top = LGOutermost(self);
@@ -203,7 +214,10 @@ static void LGHandle(UIView *container, int attempt) {
             if (gHidden == top) { LGLog(@"chốt an toàn: container vẫn bị ẩn sau 1,5 s -> hiện lại"); LGUnhide(); }
         });
     }
-    dispatch_async(dispatch_get_main_queue(), ^{ LGHandle(top, 0); });   // chờ hệ thống dựng xong 1 vòng runloop
+    // chờ hệ thống dựng xong 1 vòng runloop; nếu hiệu ứng ấn chưa chạy đủ pressHold thì chờ thêm cho đủ (menu thật đang bị ẩn)
+    double wait = LGPressRemaining();
+    if (wait > 0.001) dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(wait * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ LGHandle(top, 0); });
+    else dispatch_async(dispatch_get_main_queue(), ^{ LGHandle(top, 0); });
 }
 %end
 
@@ -236,6 +250,9 @@ static BOOL LGBoolOf(id v, BOOL def) { return [v respondsToSelector:@selector(bo
         LGNUM(@"dotOmega", dotOmega) LGNUM(@"dotDelay", dotDelay) LGNUM(@"radOmega", radOmega)
         LGNUM(@"radDelay", radDelay) LGNUM(@"blend", blend) LGNUM(@"speed", speed) LGNUM(@"closeDur", closeDur)
         LGNUM(@"tint", tint) LGNUM(@"shadow", shadow) LGNUM(@"rim", rim)
+        LGNUM(@"pressScale", pressScale) LGNUM(@"pressOmega", pressOmega) LGNUM(@"pressZeta", pressZeta)
+        LGNUM(@"pressFlash", pressFlash) LGNUM(@"pressHold", pressHold)
+        LGNUM(@"bounceAmp", bounceAmp) LGNUM(@"bounceOmega", bounceOmega) LGNUM(@"bounceZeta", bounceZeta)
         if ([p[@"material"] respondsToSelector:@selector(intValue)]) LGP.material = [p[@"material"] intValue];
         LGP.useGlass = LGBoolOf(p[@"useGlass"], LGP.useGlass);
         LGP.coverButton = LGBoolOf(p[@"coverButton"], LGP.coverButton);
@@ -243,6 +260,10 @@ static BOOL LGBoolOf(id v, BOOL def) { return [v respondsToSelector:@selector(bo
         LGP.groupButtons = LGBoolOf(p[@"groupButtons"], LGP.groupButtons);
         LGP.blurText = LGBoolOf(p[@"blurText"], LGP.blurText);
         LGP.closeAnim = LGBoolOf(p[@"closeAnim"], LGP.closeAnim);
+        LGP.bounce = LGBoolOf(p[@"bounce"], LGP.bounce);
+        LGP.press = LGBoolOf(p[@"press"], LGP.press);
+        LGP.ring = LGBoolOf(p[@"ring"], LGP.ring);
+        LGP.ringAll = LGBoolOf(p[@"ringAll"], LGP.ringAll);
         // Log chỉ ghi khi có sự kiện menu. Dump cây view/class (nặng) mặc định chỉ bật ở Ghi chú; app khác muốn dump thì đặt dump = true.
         LGP.dump = LGBoolOf(p[@"dump"], isNotes);
         LGP.debug = LGBoolOf(p[@"debug"], LGP.debug);
