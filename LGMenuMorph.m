@@ -1,5 +1,6 @@
 #import "LGMenuMorph.h"
 #import "LGLog.h"
+#import "LGRing.h"
 #import <QuartzCore/QuartzCore.h>
 #import <CoreImage/CoreImage.h>
 #import <objc/runtime.h>
@@ -11,6 +12,8 @@ LGParams LGP = { .omega = 29.0, .offsetDelay = 0.124, .contentDelay = 0.048,
                  .dotOmega = 36.0, .dotDelay = 0.01, .radOmega = 40.0, .radDelay = 0.075,
                  .blend = 24.0, .dur = 0.5, .closeDur = 0.38, .speed = 1.0,
                  .tint = 0.12, .shadow = 0.18, .rim = 0.14, .material = -1,
+                 .bounceAmp = 10.0, .bounceOmega = 22.0, .bounceZeta = 0.4, .bounce = YES, .ring = YES, .ringAll = NO,
+                 .pressScale = 1.30, .pressOmega = 34.0, .pressZeta = 0.55, .pressFlash = 1.0, .pressHold = 0.12, .press = YES,
                  .useGlass = YES, .debug = YES, .coverButton = YES, .hideSource = YES, .groupButtons = YES,
                  .blurText = YES, .closeAnim = YES, .dump = YES };
 
@@ -29,6 +32,14 @@ void LGParamsFinalize(void) {
     LGP.tint = fmin(fmax(LGP.tint, 0.0), 1.0);
     LGP.shadow = fmin(fmax(LGP.shadow, 0.0), 1.0);
     LGP.rim = fmin(fmax(LGP.rim, 0.0), 1.0);
+    LGP.bounceAmp = fmin(fmax(LGP.bounceAmp, 0.0), 40.0);
+    LGP.bounceOmega = fmin(fmax(LGP.bounceOmega, 4.0), 80.0);
+    LGP.bounceZeta = fmin(fmax(LGP.bounceZeta, 0.05), 1.0);
+    LGP.pressScale = fmin(fmax(LGP.pressScale, 1.0), 2.0);
+    LGP.pressOmega = fmin(fmax(LGP.pressOmega, 5.0), 100.0);
+    LGP.pressZeta = fmin(fmax(LGP.pressZeta, 0.1), 1.0);
+    LGP.pressFlash = fmin(fmax(LGP.pressFlash, 0.0), 2.0);
+    LGP.pressHold = fmin(fmax(LGP.pressHold, 0.0), 0.6);
     if (LGP.material < -1) LGP.material = -1;
     if (LGP.material > 4) LGP.material = 4;
     // spring 1 - (1+x)e^-x còn ~0.3% ở x = 8  ->  thời gian ổn định = delay + 8/omega
@@ -194,7 +205,7 @@ static CGPathRef LGShapePath(const LGTimeFrame *f, double ox, double oy) {
 }
 
 // ------------------------------------------------------------------ phiên
-typedef NS_ENUM(NSInteger, LGState) { LGStOpening, LGStOpen, LGStClosing, LGStSettling, LGStDone };
+typedef NS_ENUM(NSInteger, LGState) { LGStOpening, LGStOpen, LGStClosing, LGStBouncing, LGStSettling, LGStDone };
 
 @interface LGRow : NSObject
 @property (nonatomic) CGRect rect;                 // khung cuối (toạ độ window, đã tính phần dời menu)
@@ -218,6 +229,8 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
     CFTimeInterval _lastT, _settleT;
     int _ticks, _pinFix;
     double _baseA, _baseS;
+    CGPoint _bdir;        // hướng nảy khi đóng (vector đơn vị chéo): NGƯỢC phía menu mở ra
+    double _bt, _bdur;    // thời gian đã nảy / tổng thời gian nảy (s)
     NSString *_sig, *_lastWatch, *_labelSig;
 }
 @property (nonatomic, weak) UIView *container, *body, *content;
@@ -296,6 +309,10 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
     double maxR = fmin(_F.size.width, _F.size.height) / 2;
     _geom = (LGTimeGeom){ _F.size.width, _F.size.height, pl.ax, pl.ay, pl.a0x, pl.a0y, pl.a1x, pl.a1y,
                           LGCornerOf(body, container, maxR), LGBoxOf(src) };
+
+    // hướng nảy khi đóng: menu neo ở góc (ax, ay) và mở về phía đối diện, nên nảy về phía ngoài góc neo
+    // (neo trên-phải -> menu mở xuống dưới-trái -> nảy lên trên-phải)
+    _bdir = CGPointMake((pl.ax >= 0.5 ? 1.0 : -1.0) * M_SQRT1_2, (pl.ay >= 0.5 ? 1.0 : -1.0) * M_SQRT1_2);
 
     // nội dung
     NSMutableArray<UILabel *> *labels = [NSMutableArray new];
@@ -487,9 +504,12 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
 // ---------------------------------------------------------------- bắt đầu (đổi thứ nhìn thấy được)
 - (void)start {
     UIView *body = self.body;
+    // vòng cố định quanh nút: ẩn trong suốt phiên (lớp phủ tự vẽ lại đúng hình đó); ẩn TRƯỚC khi chụp icon
+    // để ảnh chụp không dính vòng (có vòng thì phải chờ cập nhật màn hình mới chụp được trạng thái mới).
+    BOOL hadRing = LGRingHide(self.sources, YES);
     // icon các nút nguồn: chụp trước khi ẩn
     for (UIView *v in self.sources) {
-        UIView *s = [v snapshotViewAfterScreenUpdates:NO];
+        UIView *s = [v snapshotViewAfterScreenUpdates:hadRing];
         if (s) {
             s.frame = CGRectOffset(LGWinRect(v), -_R.origin.x, -_R.origin.y);
             [self.clip addSubview:s];
@@ -537,18 +557,10 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
 - (void)renderAt:(double)tau {
     LGTimeFrame f = LGTimelineAt(&_spec, &_geom, tau);
     CGPathRef P = LGShapePath(&f, _R.origin.x, _R.origin.y);
-    CGMutablePathRef outside = CGPathCreateMutable();
-    CGPathAddRect(outside, NULL, self.reg.bounds);
-    CGPathAddPath(outside, NULL, P);
 
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
-    self.fxMask.path = P;
-    self.tintL.path = P;
-    self.clipMask.path = P;
-    self.rimL.path = P;
-    self.shadowL.shadowPath = P;
-    self.shadowMask.path = outside;
+    [self applyPath:P];
 
     for (UIView *s in self.iconSnaps) s.alpha = (CGFloat)f.iconAlpha;
     self.fullSnap.alpha = (CGFloat)f.full;
@@ -577,7 +589,39 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
     }
     [CATransaction commit];
     CGPathRelease(P);
+}
+
+// Gán đường viền cho mọi lớp tạo nên khối kính (gọi bên trong CATransaction đã tắt action).
+- (void)applyPath:(CGPathRef)P {
+    CGMutablePathRef outside = CGPathCreateMutable();
+    CGPathAddRect(outside, NULL, self.reg.bounds);
+    CGPathAddPath(outside, NULL, P);
+    self.fxMask.path = P;
+    self.tintL.path = P;
+    self.clipMask.path = P;
+    self.rimL.path = P;
+    self.shadowL.shadowPath = P;
+    self.shadowMask.path = outside;
     CGPathRelease(outside);
+}
+
+// Khung hình của pha NẢY: viên kính (hình xuất phát = nút/viên thuốc) + icon trượt chéo theo lò xo rồi về đúng chỗ nút.
+- (void)renderBounce:(double)t {
+    double a = LGP.bounceAmp * lgtl_bounce(t, LGP.bounceOmega, LGP.bounceZeta);
+    double dx = _bdir.x * a, dy = _bdir.y * a;
+    LGTimeFrame f = LGTimelineAt(&_spec, &_geom, 0);          // tau = 0: chỉ còn viên kính của nút
+    CGPathRef P = LGShapePath(&f, _R.origin.x - dx, _R.origin.y - dy);   // gốc lệch (-dx,-dy) => hình dời (+dx,+dy)
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    [self applyPath:P];
+    for (UIView *s in self.iconSnaps) {
+        s.alpha = 1;
+        s.transform = CGAffineTransformMakeTranslation((CGFloat)dx, (CGFloat)dy);
+    }
+    self.fullSnap.alpha = 0;
+    for (LGRow *r in self.rows) r.holder.hidden = YES;
+    [CATransaction commit];
+    CGPathRelease(P);
 }
 
 // ---------------------------------------------------------------- đồng hồ
@@ -614,6 +658,11 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
             if (_tau <= 0) { [self finishClose]; return; }
             [self renderAt:_tau];
             break;
+        case LGStBouncing:
+            _bt += dt * LGP.speed;
+            if (_bt >= _bdur) { [self settleAfterClose]; return; }
+            [self renderBounce:_bt];
+            break;
         case LGStSettling: {
             if (!self.container.window) { [self finishAll:@"menu đã gỡ hẳn"]; return; }
             double a, sc;
@@ -641,6 +690,7 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
 }
 
 - (void)restoreSources {
+    LGRingHide(self.sources, NO);     // vòng cố định hiện lại cùng lúc nút được trả
     if (!LGP.hideSource) return;
     for (NSUInteger i = 0; i < self.sources.count && i < self.srcAlpha.count; i++) self.sources[i].alpha = (CGFloat)self.srcAlpha[i].doubleValue;
 }
@@ -758,7 +808,22 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
     _lastT = CACurrentMediaTime();
 }
 
+// Hết animation đóng: nếu bật thì NẢY chéo trước, rồi mới trả nút. Gọi từ startClose (khi không có animation) thì bỏ qua nảy.
 - (void)finishClose {
+    if (LGP.bounce && LGP.bounceAmp > 0.01 && self.ow && self.state == LGStClosing) { [self startBounce]; return; }
+    [self settleAfterClose];
+}
+
+- (void)startBounce {
+    _bt = 0;
+    _bdur = lgtl_bounce_dur(LGP.bounceOmega, LGP.bounceZeta, LGP.bounceAmp);
+    self.state = LGStBouncing;
+    _lastT = CACurrentMediaTime();
+    LGLog(@"NẢY: hướng (%+.2f,%+.2f) biên độ=%.1f pt omega=%.1f zeta=%.2f dur=%.3f", _bdir.x, _bdir.y, LGP.bounceAmp, LGP.bounceOmega, LGP.bounceZeta, _bdur);
+    [self renderBounce:0];
+}
+
+- (void)settleAfterClose {
     [self restoreSources];
     self.ow.hidden = YES;
     self.state = LGStSettling;
@@ -781,6 +846,7 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
     if (LGP.hideSource) {
         for (UIView *v in self.sources) { [v.layer removeAllAnimations]; v.alpha = 0; }
     }
+    LGRingHide(self.sources, YES);
     b.hidden = NO;
     [self pinBody];
     self.state = LGStOpen;
