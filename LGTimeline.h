@@ -44,6 +44,36 @@ static inline double lgtl_lerp(double a, double b, double t) { return a + (b - a
 // Spring tới hạn (zeta = 1) dạng đóng: 0 -> 1 kể từ t = 0. t <= 0 -> 0.
 static inline double lgtl_sp(double t, double w) { return t <= 0 ? 0 : 1 - (1 + w * t) * exp(-w * t); }
 
+// Nảy khi đóng: dao động tắt dần (lò xo thiếu giảm chấn) CHUẨN HOÁ để đỉnh đầu tiên = 1.
+//   t = giây kể từ lúc animation đóng chạm đáy; w = tần số góc (rad/s); zeta = hệ số giảm chấn (0..1, càng nhỏ càng nảy nhiều).
+//   Giá trị: 0 lúc t = 0 -> vọt lên 1 (đỉnh) -> xuống hơi âm (lò xo kéo ngược lại) -> tắt dần về 0.
+//   Độ dời thực = hướng * biên độ(pt) * lgtl_bounce(...).
+static inline double lgtl_bounce(double t, double w, double zeta) {
+    if (t <= 0) return 0;
+    double z = lgtl_clamp(zeta, 0.01, 0.99);
+    double wd = w * sqrt(1 - z * z);
+    double tp = atan2(wd, z * w) / wd;                 // thời điểm đỉnh đầu tiên
+    double peak = exp(-z * w * tp) * sin(wd * tp);
+    return exp(-z * w * t) * sin(wd * t) / peak;
+}
+// Thời gian để đường bao biên độ tắt xuống còn ~0,5 pt (sau đó nhìn không ra nữa).
+static inline double lgtl_bounce_dur(double w, double zeta, double amp) {
+    double z = lgtl_clamp(zeta, 0.01, 0.99);
+    return lgtl_clamp(log(fmax(amp / 0.5, 1.01)) / (z * w), 0.1, 1.5);
+}
+
+// Ấn nút (lóe sáng + phóng to), đo từ video demo (24 fps, nút 189 px):
+//   phóng to: lò xo thiếu giảm chấn 1 -> target (demo: đỉnh ~1,34 ở ~100 ms rồi nhích về ~1,29)
+//   lóe sáng: tiến về 1 theo hàm mũ, hằng số thời gian ~30 ms (độ sáng nền 19 -> 131 trong ~100 ms)
+static inline double lgtl_press_scale(double t, double target, double w, double zeta) {
+    if (t <= 0) return 1;
+    double z = lgtl_clamp(zeta, 0.01, 0.99);
+    double wd = w * sqrt(1 - z * z);
+    double u = 1 - exp(-z * w * t) * (cos(wd * t) + (z * w / wd) * sin(wd * t));
+    return 1 + (target - 1) * u;
+}
+static inline double lgtl_press_flash(double t, double tau) { return t <= 0 ? 0 : 1 - exp(-t / fmax(tau, 1e-3)); }
+
 static inline LGTimeFrame LGTimelineAt(const LGTimeSpec *sp, const LGTimeGeom *g, double tau) {
     LGTimeFrame f;
     tau = lgtl_clamp(tau, 0, sp->dur);
