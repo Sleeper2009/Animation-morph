@@ -149,10 +149,17 @@ static void LGHandle(UIView *container, int attempt) {
     for (UIView *v in sources) [names appendFormat:@"%s%@ ", object_getClassName(v), NSStringFromCGRect([v convertRect:v.bounds toView:nil])];
     LGLog(@"menu từ nút: %@", names);
     CGRect fb = CGRectMake(gTouch.x - 22, gTouch.y - 22, 44, 44);
-    [LGMenuMorph beginWithContainer:container body:body sources:sources fallbackRect:fb];
+    @try {
+        [LGMenuMorph beginWithContainer:container body:body sources:sources fallbackRect:fb];
+    } @catch (NSException *ex) {
+        LGLog(@"NGOẠI LỆ khi bắt đầu morph: %@ %@ -> hủy, trả menu về nguyên trạng", ex.name, ex.reason);
+        [LGMenuMorph cancelAll];
+    }
     LGUnhide();
     gBusy = NO;
 }
+
+%group LGMain
 
 %hook UIApplication
 - (void)sendEvent:(UIEvent *)e {
@@ -200,6 +207,8 @@ static void LGHandle(UIView *container, int attempt) {
 }
 %end
 
+%end // group LGMain
+
 // plist do người dùng sửa tay: kiểu dữ liệu sai không được làm crash app đích
 #define LGNUM(key, field) if ([p[key] respondsToSelector:@selector(doubleValue)]) LGP.field = [p[key] doubleValue];
 static BOOL LGBoolOf(id v, BOOL def) { return [v respondsToSelector:@selector(boolValue)] ? [v boolValue] : def; }
@@ -207,9 +216,14 @@ static BOOL LGBoolOf(id v, BOOL def) { return [v respondsToSelector:@selector(bo
 %ctor {
     @autoreleasepool {
         NSDictionary *p = [NSDictionary dictionaryWithContentsOfFile:ROOT_PATH_NS(kPrefs)] ?: @{};
+        NSString *bid = NSBundle.mainBundle.bundleIdentifier ?: @"";
+        BOOL isNotes = [bid isEqualToString:@"com.apple.mobilenotes"];
         gEnabled = LGBoolOf(p[@"enabled"], YES);
-        if ([NSBundle.mainBundle.bundleIdentifier isEqualToString:@"com.apple.springboard"] && !LGBoolOf(p[@"springboard"], NO))
-            gEnabled = NO;
+        if ([bid isEqualToString:@"com.apple.springboard"] && !LGBoolOf(p[@"springboard"], NO)) gEnabled = NO;
+        // onlyApps: chỉ chạy trong các app này (rỗng/không có = mọi app). excludeApps: loại trừ các app này.
+        id only = p[@"onlyApps"], ex = p[@"excludeApps"];
+        if ([only isKindOfClass:NSArray.class] && ((NSArray *)only).count && ![(NSArray *)only containsObject:bid]) gEnabled = NO;
+        if ([ex isKindOfClass:NSArray.class] && [(NSArray *)ex containsObject:bid]) gEnabled = NO;
 
         // hints: chỉ nhận NSString không rỗng ("" sẽ khớp mọi view; NSNumber sẽ crash ở UTF8String)
         NSMutableArray<NSString *> *hs = [NSMutableArray new];
@@ -229,10 +243,12 @@ static BOOL LGBoolOf(id v, BOOL def) { return [v respondsToSelector:@selector(bo
         LGP.groupButtons = LGBoolOf(p[@"groupButtons"], LGP.groupButtons);
         LGP.blurText = LGBoolOf(p[@"blurText"], LGP.blurText);
         LGP.closeAnim = LGBoolOf(p[@"closeAnim"], LGP.closeAnim);
-        LGP.dump = LGBoolOf(p[@"dump"], LGP.dump);
+        // Log chỉ ghi khi có sự kiện menu. Dump cây view/class (nặng) mặc định chỉ bật ở Ghi chú; app khác muốn dump thì đặt dump = true.
+        LGP.dump = LGBoolOf(p[@"dump"], isNotes);
         LGP.debug = LGBoolOf(p[@"debug"], LGP.debug);
         LGParamsFinalize();
         LGLogOn = LGP.debug;
-        LGLog(@"LiquidMenu v3 khởi động trong %@ (enabled=%d) log: %@", NSBundle.mainBundle.bundleIdentifier, (int)gEnabled, LGLogPaths());
+        if (gEnabled && (isNotes || p[@"debug"])) LGLog(@"LiquidMenu v3 khởi động trong %@ log: %@", bid, LGLogPaths());
+        if (gEnabled) { %init(LGMain); }
     }
 }
