@@ -11,6 +11,14 @@ static BOOL gEnabled = YES, gBusy = NO;
 static __weak UIView *gSource;            // nút vừa được chạm (nil nếu chạm vào chỗ không phải nút)
 static CGPoint gTouch;                    // vị trí chạm (toạ độ window)
 static CFTimeInterval gSourceT;
+static __weak UIView *gHidden;            // container đang bị ẩn tạm (layer.hidden) để không lộ vài khung hình của menu hệ thống
+
+// Trả container về hiển thị bình thường (phiên morph tự bật lại khi bắt đầu; gọi thêm ở mọi đường thoát cho chắc).
+static void LGUnhide(void) {
+    UIView *c = gHidden;
+    gHidden = nil;
+    if (c) c.layer.hidden = NO;
+}
 
 static BOOL LGNameHas(id obj, const char *s) { return obj && strstr(object_getClassName(obj), s) != NULL; }
 
@@ -103,8 +111,8 @@ static UIView *LGLCA(NSArray<UIView *> *views) {
 }
 
 static void LGHandle(UIView *container, int attempt) {
-    if (!container.window) { gBusy = NO; return; }
-    if ([LGMenuMorph isActive] && [LGMenuMorph activeContainer] == container) { gBusy = NO; return; }
+    if (!container.window) { LGUnhide(); gBusy = NO; return; }
+    if ([LGMenuMorph isActive] && [LGMenuMorph activeContainer] == container) { LGUnhide(); gBusy = NO; return; }
     NSMutableArray *labels = [NSMutableArray new];
     LGLabelsOf(container, labels);
     if (!labels.count) {   // menu chưa dựng xong nội dung -> thử lại vài lần
@@ -112,6 +120,7 @@ static void LGHandle(UIView *container, int attempt) {
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{ LGHandle(container, attempt + 1); });
         } else {
             LGLog(@"bỏ qua: menu %s không có chữ sau %d lần thử", object_getClassName(container), attempt);
+            LGUnhide();
             gBusy = NO;
         }
         return;
@@ -123,6 +132,7 @@ static void LGHandle(UIView *container, int attempt) {
     if (!content || body == container || !body.superview) {
         LGLog(@"bỏ qua: container=%s content=%s body=%s", object_getClassName(container),
               content ? object_getClassName(content) : "nil", body ? object_getClassName(body) : "nil");
+        LGUnhide();
         gBusy = NO;
         return;
     }
@@ -130,6 +140,7 @@ static void LGHandle(UIView *container, int attempt) {
     UIView *s = gSource;
     if (!s.window) {
         LGLog(@"bỏ qua: menu %s không xuất phát từ nút (lần chạm cuối không phải nút)", object_getClassName(container));
+        LGUnhide();
         gBusy = NO;
         return;
     }
@@ -139,6 +150,7 @@ static void LGHandle(UIView *container, int attempt) {
     LGLog(@"menu từ nút: %@", names);
     CGRect fb = CGRectMake(gTouch.x - 22, gTouch.y - 22, 44, 44);
     [LGMenuMorph beginWithContainer:container body:body sources:sources fallbackRect:fb];
+    LGUnhide();
     gBusy = NO;
 }
 
@@ -175,6 +187,15 @@ static void LGHandle(UIView *container, int attempt) {
     LGLog(@"+%s frame=%@ window=%s level=%.0f", n, NSStringFromCGRect(self.frame), object_getClassName(self.window), (double)self.window.windowLevel);
     if (gBusy) return;
     gBusy = YES;
+    // Ẩn ngay container (chỉ layer.hidden: UIKit không đụng tới nó, còn cảm ứng vẫn hoạt động) TRƯỚC khung hình đầu tiên,
+    // nếu không người dùng thấy menu hệ thống hiện ~4 khung rồi mới tới morph. Chỉ ẩn khi menu xuất phát từ một nút.
+    if (gSource.window) {
+        top.layer.hidden = YES;
+        gHidden = top;
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            if (gHidden == top) { LGLog(@"chốt an toàn: container vẫn bị ẩn sau 1,5 s -> hiện lại"); LGUnhide(); }
+        });
+    }
     dispatch_async(dispatch_get_main_queue(), ^{ LGHandle(top, 0); });   // chờ hệ thống dựng xong 1 vòng runloop
 }
 %end
