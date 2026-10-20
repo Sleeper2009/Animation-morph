@@ -11,7 +11,7 @@ THEOS_PACKAGE_SCHEME ?= rootless
 include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = LiquidMenu
-LiquidMenu_FILES = Tweak.x LGMenuMorph.m LGLog.m LGMetaball.c
+LiquidMenu_FILES = Tweak.x LGMenuMorph.m LGLog.m LGMetaball.c LGRing.m
 LiquidMenu_FRAMEWORKS = UIKit QuartzCore CoreGraphics CoreImage
 LiquidMenu_CFLAGS = -fobjc-arc -Wno-deprecated-declarations
 
