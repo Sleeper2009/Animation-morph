@@ -8,7 +8,7 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>footerText</key>
-			<string>Thay animation mở / đóng menu của nút bằng hiệu ứng morph. Đổi công tắc có hiệu lực ngay, không cần mở lại ứng dụng.</string>
+			<string>Đổi công tắc có hiệu lực ngay.</string>
 			<key>label</key>
 			<string>LiquidMenu</string>
 		</dict>
@@ -29,8 +29,6 @@
 		<dict>
 			<key>cell</key>
 			<string>PSGroupCell</string>
-			<key>footerText</key>
-			<string>Vòng luôn hiện quanh nút mở menu, kể cả khi không chạm.</string>
 			<key>label</key>
 			<string>Vòng tròn quanh nút</string>
 		</dict>
@@ -46,7 +44,7 @@
 			<key>key</key>
 			<string>ring</string>
 			<key>label</key>
-			<string>Vòng tròn quanh nút ở trạng thái chờ</string>
+			<string>Vòng quanh nút</string>
 		</dict>
 		<dict>
 			<key>PostNotification</key>
@@ -60,13 +58,13 @@
 			<key>key</key>
 			<string>ringBack</string>
 			<key>label</key>
-			<string>Vòng tròn quanh mục quay lại</string>
+			<string>Vòng quanh nút Quay lại</string>
 		</dict>
 		<dict>
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>label</key>
-			<string>Hiệu ứng</string>
+			<string>Khi ấn nút</string>
 		</dict>
 		<dict>
 			<key>PostNotification</key>
@@ -78,9 +76,29 @@
 			<key>defaults</key>
 			<string>com.fujb-2009.liquidmenu</string>
 			<key>key</key>
-			<string>press</string>
+			<string>flash</string>
 			<key>label</key>
-			<string>Lóe sáng + phóng to khi ấn nút</string>
+			<string>Lóe sáng</string>
+		</dict>
+		<dict>
+			<key>PostNotification</key>
+			<string>com.fujb-2009.liquidmenu/reload</string>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>default</key>
+			<true/>
+			<key>defaults</key>
+			<string>com.fujb-2009.liquidmenu</string>
+			<key>key</key>
+			<string>zoom</string>
+			<key>label</key>
+			<string>Phóng to</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
+			<string>Menu</string>
 		</dict>
 		<dict>
 			<key>PostNotification</key>
@@ -94,7 +112,7 @@
 			<key>key</key>
 			<string>bounce</string>
 			<key>label</key>
-			<string>Nảy lò xo khi đóng menu</string>
+			<string>Nảy khi đóng</string>
 		</dict>
 		<dict>
 			<key>PostNotification</key>
@@ -108,7 +126,7 @@
 			<key>key</key>
 			<string>groupButtons</string>
 			<key>label</key>
-			<string>Gộp các nút liền nhau thành một viên thuốc</string>
+			<string>Gộp nút liền nhau</string>
 		</dict>
 		<dict>
 			<key>PostNotification</key>
@@ -122,7 +140,7 @@
 			<key>key</key>
 			<string>fallbackAnim</string>
 			<key>label</key>
-			<string>Animation dự phòng khi không morph được</string>
+			<string>Animation dự phòng</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -138,13 +156,11 @@
 			<key>isController</key>
 			<true/>
 			<key>label</key>
-			<string>Ứng dụng không dùng animation</string>
+			<string>Loại trừ ứng dụng</string>
 		</dict>
 		<dict>
 			<key>cell</key>
 			<string>PSGroupCell</string>
-			<key>footerText</key>
-			<string>Respring khi vừa cài hoặc cập nhật LiquidMenu để SpringBoard nạp lại.</string>
 			<key>label</key>
 			<string>Hệ thống</string>
 		</dict>
