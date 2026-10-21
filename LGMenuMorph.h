@@ -14,6 +14,7 @@ typedef struct {
     double bounceAmp, bounceOmega, bounceZeta;  // nảy khi đóng: biên độ (pt) / tần số góc (rad/s) / giảm chấn (0..1, nhỏ = nảy nhiều)
     BOOL useGlass, debug, coverButton, hideSource, groupButtons, blurText, closeAnim, dump;
     double pressScale, pressOmega, pressZeta;   // ấn nút: phóng to tới (lần) / tần số góc / giảm chấn
+    double ringMargin, ringPadX;                // vòng: cách mép cửa sổ tối thiểu (pt) / đệm hai bên chữ (pt)
     double pressFlash, pressHold;               // ấn nút: độ sáng lóe (1 = như video) / thời gian giữ tối thiểu trước khi menu morph (s)
     BOOL bounce;                                // bật nảy chéo khi đóng
     BOOL press;                                 // bật lóe sáng + phóng to khi ấn nút
