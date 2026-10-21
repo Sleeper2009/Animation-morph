@@ -17,7 +17,8 @@ typedef struct {
     double ringMargin, ringPadX;                // vòng: cách mép cửa sổ tối thiểu (pt) / đệm hai bên chữ (pt)
     double pressFlash, pressHold;               // ấn nút: độ sáng lóe (1 = như video) / thời gian giữ tối thiểu trước khi menu morph (s)
     BOOL bounce;                                // bật nảy chéo khi đóng
-    BOOL press;                                 // bật lóe sáng + phóng to khi ấn nút
+    BOOL press;                                 // (suy ra) có ít nhất một trong hai hiệu ứng ấn
+    BOOL pressFlashOn, pressZoomOn;             // lóe sáng khi ấn / phóng to khi ấn (bật tắt độc lập)
     BOOL ring, ringAll;                         // vòng tròn cố định quanh nút mở menu / quanh mọi UIButton nhỏ
     BOOL ringBack;                              // vòng quanh nút "quay lại" (thanh điều hướng)
     BOOL fallbackAnim;                          // menu không morph được -> chạy animation đơn giản thay vì hiện cái bụp
