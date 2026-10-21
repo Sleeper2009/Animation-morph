@@ -2,18 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>entry</key>
+	<key>Filter</key>
 	<dict>
-		<key>bundle</key>
-		<string>LiquidMenuPrefs</string>
-		<key>cell</key>
-		<string>PSLinkCell</string>
-		<key>detail</key>
-		<string>LMRootListController</string>
-		<key>isController</key>
-		<true/>
-		<key>label</key>
-		<string>LiquidMenu</string>
+		<key>Bundles</key>
+		<array>
+			<string>com.apple.UIKit</string>
+		</array>
 	</dict>
 </dict>
 </plist>
