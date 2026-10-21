@@ -19,6 +19,10 @@ typedef struct {
     BOOL bounce;                                // bật nảy chéo khi đóng
     BOOL press;                                 // bật lóe sáng + phóng to khi ấn nút
     BOOL ring, ringAll;                         // vòng tròn cố định quanh nút mở menu / quanh mọi UIButton nhỏ
+    BOOL ringBack;                              // vòng quanh nút "quay lại" (thanh điều hướng)
+    BOOL fallbackAnim;                          // menu không morph được -> chạy animation đơn giản thay vì hiện cái bụp
+    double groupGap;                            // gộp các nút thành một viên thuốc khi khoảng hở giữa phần NHÌN THẤY <= giá trị này (pt)
+    int overlayMode;                            // 0 = tự chọn (extension -> view trong cửa sổ), 1 = UIWindow riêng, 2 = view trong cửa sổ
 } LGParams;
 
 extern LGParams LGP;
@@ -43,5 +47,9 @@ void LGParamsFinalize(void);
 
 /// Dừng ngay, trả lại mọi thứ về nguyên trạng (không animation).
 + (void)cancelAll;
+
+/// App vừa present một view controller (vd bảng chọn tệp). Nếu ngay trước đó người dùng chạm vào một mục trong menu thì bỏ animation đóng
+/// (menu thật còn nằm đó trong lúc bảng trượt lên, animation đóng chạy muộn trông rất buồn cười).
++ (void)modalPresented;
 
 @end
