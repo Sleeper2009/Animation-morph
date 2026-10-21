@@ -60,22 +60,77 @@ static BOOL LGHasMenu(UIView *v) {
     return NO;
 }
 
-static BOOL LGRingBase(UIView *v) {
+BOOL LGHasMenuInteraction(UIView *v) { return v && LGHasMenu(v); }
+
+// Nút "quay lại" của thanh điều hướng: UIKit đặt accessibilityIdentifier = "BackButton" (lớp ngoài), và/hoặc tên class có "Back".
+BOOL LGIsBackButton(UIView *v) {
+    int n = 0;
+    for (UIView *c = v; c && n < 4; c = c.superview, n++) {
+        if ([c.accessibilityIdentifier isEqualToString:@"BackButton"]) return YES;
+        if (strstr(object_getClassName(c), "Back") != NULL) return YES;
+    }
+    return NO;
+}
+
+// forRing = YES: dùng cho vòng cố định (tôn trọng công tắc ringBack); NO: dùng cho hiệu ứng ấn.
+static BOOL LGRingBase(UIView *v, BOOL forRing) {
     if (!LGButtonLike(v) || v.hidden) return NO;
     CGSize s = v.bounds.size;
     if (s.width >= 120 || s.height >= 80) return NO;
+    if (forRing && !LGP.ringBack && LGIsBackButton(v)) return NO;
     return LGHasMenu(v) || (LGP.ringAll && [v isKindOfClass:UIButton.class]);
 }
 
-static BOOL LGDescHasCandidate(UIView *v, int depth) {
+static BOOL LGDescHasCandidate(UIView *v, int depth, BOOL forRing) {
     if (depth > 3) return NO;
     for (UIView *s in v.subviews)
-        if (LGRingBase(s) || LGDescHasCandidate(s, depth + 1)) return YES;
+        if (LGRingBase(s, forRing) || LGDescHasCandidate(s, depth + 1, forRing)) return YES;
     return NO;
 }
 
 BOOL LGRingIsCandidate(UIView *v) {
-    return v && LGRingBase(v) && !LGDescHasCandidate(v, 0);
+    return v && LGRingBase(v, YES) && !LGDescHasCandidate(v, 0, YES);
+}
+
+BOOL LGPressIsCandidate(UIView *v) {
+    return v && LGRingBase(v, NO) && !LGDescHasCandidate(v, 0, NO);
+}
+
+// ------------------------------------------------------------------ lớp phủ (cửa sổ riêng hoặc view trong cửa sổ)
+// Trong extension / remote view service (đuôi .appex, vd bảng chọn tệp) UIWindow riêng KHÔNG được hiển thị (nút bị ẩn mà không thấy lớp phủ đâu),
+// nên ở đó dùng một view phủ kín ngay trong cửa sổ của menu / của nút, luôn đưa lên trên cùng.
+UIView *LGMakeOverlay(UIWindow *win) {
+    BOOL ext = [NSBundle.mainBundle.bundlePath.pathExtension isEqualToString:@"appex"];
+    BOOL asView = LGP.overlayMode == 2 || (LGP.overlayMode == 0 && ext);
+    if (asView) {
+        UIView *ov = [[UIView alloc] initWithFrame:win.bounds];
+        ov.userInteractionEnabled = NO;
+        ov.backgroundColor = UIColor.clearColor;
+        ov.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+        ov.hidden = YES;
+        [win addSubview:ov];
+        LGLog(@"lớp phủ: view trong cửa sổ %s (%@)", object_getClassName(win), ext ? @"extension" : @"theo overlayMode");
+        return ov;
+    }
+    UIWindowScene *sc = win.windowScene;
+    UIWindow *w = sc ? [[UIWindow alloc] initWithWindowScene:sc] : [[UIWindow alloc] initWithFrame:win.bounds];
+    w.frame = win.frame;
+    w.windowLevel = fmax(UIWindowLevelAlert + 100, win.windowLevel + 1);
+    w.backgroundColor = UIColor.clearColor;
+    w.userInteractionEnabled = NO;
+    return w;
+}
+
+void LGOverlayShow(UIView *ov) {
+    if (!ov) return;
+    if (![ov isKindOfClass:UIWindow.class] && ov.superview) [ov.superview bringSubviewToFront:ov];
+    ov.hidden = NO;
+}
+
+void LGOverlayDrop(UIView *ov) {
+    if (!ov) return;
+    ov.hidden = YES;
+    if (![ov isKindOfClass:UIWindow.class]) [ov removeFromSuperview];
 }
 
 // ------------------------------------------------------------------ khung nhìn thấy của nút
@@ -280,6 +335,22 @@ static void LGRingRefresh(UIView *v, int attempt, BOOL quiet) {
               fmin(u.size.width, u.size.height) / 2, object_getClassName(parent));
 }
 
+// Quét lại mọi cửa sổ để dựng vòng cho các nút đã có sẵn (dùng khi người dùng bật công tắc vòng trong Cài đặt: không cần mở lại app).
+static void LGRescanView(UIView *v, int depth) {
+    if (depth > 30 || [v isKindOfClass:LGRingView.class]) return;
+    if (LGButtonLike(v) && LGRingIsCandidate(v)) LGRingRefresh(v, 0, NO);
+    for (UIView *s in v.subviews) LGRescanView(s, depth + 1);
+}
+
+void LGRingRescanAll(BOOL enabled) {
+    if (!enabled || !LGP.ring) {           // tắt: gỡ hết vòng đang có
+        for (UIView *o in gOwners.allObjects) LGRingRemove(o);
+        return;
+    }
+    UIApplication *app = UIApplication.sharedApplication;
+    for (UIWindow *w in app.windows) LGRescanView(w, 0);
+}
+
 void LGRingSchedule(UIView *v) {
     if (!LGP.ring || !v) return;
     __weak UIView *w = v;
@@ -307,7 +378,7 @@ BOOL LGRingHide(NSArray<UIView *> *views, BOOL hide) {
 
 // ------------------------------------------------------------------ hiệu ứng ẤN (lóe sáng + phóng to)
 @interface LGPress : NSObject
-@property (nonatomic, strong) UIWindow *ow;
+@property (nonatomic, strong) UIView *ow;
 @property (nonatomic, strong) UIView *holder, *flash;
 @property (nonatomic, strong) CALayer *glow;
 @property (nonatomic, strong) NSArray<UIView *> *sources;
@@ -348,12 +419,7 @@ static LGPress *gPress;
     LGPress *p = [LGPress new];
     p.sources = srcs;
 
-    UIWindowScene *sc = win.windowScene;
-    UIWindow *ow = sc ? [[UIWindow alloc] initWithWindowScene:sc] : [[UIWindow alloc] initWithFrame:win.bounds];
-    ow.frame = win.frame;
-    ow.windowLevel = fmax(UIWindowLevelAlert + 100, win.windowLevel + 1);
-    ow.backgroundColor = UIColor.clearColor;
-    ow.userInteractionEnabled = NO;
+    UIView *ow = LGMakeOverlay(win);
     p.ow = ow;
 
     // viên kính = đúng hình vòng cố định (cùng khung, cùng bo góc min(rộng, cao)/2)
@@ -404,7 +470,7 @@ static LGPress *gPress;
     p->_sCur = 1;
     p->_fCur = 0;
     gPress = p;
-    ow.hidden = NO;
+    LGOverlayShow(ow);
     p.link = [CADisplayLink displayLinkWithTarget:p selector:@selector(tick:)];
     [p.link addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
     LGLog(@"ẤN: %lu nút, khung %@ bo=%.1f %@", (unsigned long)srcs.count, NSStringFromCGRect(u), rad, dark ? @"(tối: lóe trắng)" : @"(sáng: lóe tối)");
@@ -457,7 +523,7 @@ static LGPress *gPress;
     [self.link invalidate];
     self.link = nil;
     [self restoreSources];
-    self.ow.hidden = YES;
+    LGOverlayDrop(self.ow);
     self.ow = nil;
     if (gPress == self) gPress = nil;
 }
