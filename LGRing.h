@@ -9,6 +9,10 @@
 NSArray<UIView *> *LGGroupFor(UIView *src);
 BOOL LGButtonLike(UIView *v);
 
+/// Khung NHÌN THẤY của nút trong toạ độ cửa sổ: căn theo vùng nội dung (icon/chữ) chứ không theo khung kỹ thuật của nút,
+/// nút chữ -> viên thuốc (chữ + đệm hai bên), nút icon -> hình tròn; cách mép cửa sổ ít nhất `ringMargin`. Dùng chung cho vòng, hiệu ứng ấn và morph.
+CGRect LGSrcRect(UIView *v);
+
 /// View này có phải nút cần vẽ vòng không (nút có menu; hoặc mọi UIButton nhỏ nếu ringAll). Chỉ nhận nút SÂU NHẤT.
 BOOL LGRingIsCandidate(UIView *v);
 /// Lên lịch dựng / cập nhật vòng cho nút (chờ layout xong; gọi lại sau khi nút vào window).
