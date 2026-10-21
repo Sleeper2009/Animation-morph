@@ -5,7 +5,11 @@
 #import "LGLog.h"
 #import "LGRing.h"
 
-#define kPrefs @"/var/mobile/Library/Preferences/com.yourname.liquidmenu.plist"
+// Cài đặt: domain CFPreferences do bảng Cài đặt (LiquidMenuPrefs) ghi; file plist cùng tên vẫn đọc được để chỉnh tay (khoá nâng cao như omega, hints...).
+#define kDomain @"com.fujb-2009.liquidmenu"
+#define kPrefs @"/var/mobile/Library/Preferences/com.fujb-2009.liquidmenu.plist"
+#define kOldPrefs @"/var/mobile/Library/Preferences/com.yourname.liquidmenu.plist"
+#define kReloadNote CFSTR("com.fujb-2009.liquidmenu/reload")
 
 static NSArray<NSString *> *gHints;       // chuỗi con trong tên class private của menu (đã lọc: toàn NSString không rỗng)
 static BOOL gEnabled = YES, gBusy = NO;
@@ -53,6 +57,12 @@ BOOL LGButtonLike(UIView *v) { return [v isKindOfClass:UIControl.class] || LGNam
 static UIView *LGPickSource(UIView *v) {
     for (UIView *c = v; c && c.bounds.size.width < 120; c = c.superview)
         if (LGButtonLike(c)) return c;
+    // lượt 2: view SINH RA menu (có UIContextMenuInteraction / UIButton.menu) dù không phải UIControl hoặc hơi lớn (vd nút AA của Safari)
+    int n = 0;
+    for (UIView *c = v; c && n < 8; c = c.superview, n++) {
+        CGSize s = c.bounds.size;
+        if (s.width < 240 && s.height < 90 && LGHasMenuInteraction(c)) return c;
+    }
     return nil;
 }
 
@@ -71,7 +81,9 @@ static UIView *LGFirstButton(UIView *v, int depth) {
 NSArray<UIView *> *LGGroupFor(UIView *src) {
     NSMutableArray<UIView *> *group = [NSMutableArray arrayWithObject:src];
     if (!LGP.groupButtons) return group;
-    CGRect u = [src convertRect:src.bounds toView:nil];
+    // Dùng khung NHÌN THẤY (LGSrcRect) chứ không phải khung kỹ thuật: nút thanh công cụ (vd chia sẻ / dấu trang / thẻ của Safari) có khung sát nhau
+    // dù phần nhìn thấy cách xa nhau -> trước đây bị gộp thành một viên thuốc.
+    CGRect u = LGSrcRect(src);
     for (int round = 0; round < 3; round++) {
         BOOL grew = NO;
         UIView *node = src;
@@ -81,12 +93,12 @@ NSArray<UIView *> *LGGroupFor(UIView *src) {
                 if (sib == node || sib.hidden || sib.alpha < 0.05) continue;
                 UIView *b = LGFirstButton(sib, 0);
                 if (!b || [group containsObject:b] || !b.window) continue;
-                CGRect r = [b convertRect:b.bounds toView:nil];
+                CGRect r = LGSrcRect(b);
                 if (r.size.width > 120 || r.size.height > 80) continue;
                 if (fabs(CGRectGetMidY(r) - CGRectGetMidY(u)) > 8 || fabs(r.size.height - u.size.height) > 12) continue;
                 double gap = r.origin.x >= CGRectGetMaxX(u) ? r.origin.x - CGRectGetMaxX(u)
                            : (u.origin.x >= CGRectGetMaxX(r) ? u.origin.x - CGRectGetMaxX(r) : -1);
-                if (gap < -2 || gap > 20) continue;
+                if (gap < -2 || gap > LGP.groupGap) continue;
                 [group addObject:b];
                 u = CGRectUnion(u, r);
                 added = YES;
@@ -112,6 +124,26 @@ static UIView *LGLCA(NSArray<UIView *> *views) {
     return nil;
 }
 
+// Menu hiện từ một nút nhưng morph không chạy được (tiến trình lạ, setup thất bại...): trước đây menu hệ thống bị ẩn ~0,12 s rồi hiện cái bụp.
+// Thay vào đó chạy một animation lò xo đơn giản: menu phóng ra từ chỗ nút. Gọi TRƯỚC LGUnhide.
+static void LGFallback(UIView *container, UIView *body) {
+    if (!LGP.fallbackAnim) return;
+    UIView *s = gSource;
+    UIView *v = body ?: container;
+    if (!s.window || !v.window || !v.superview) return;
+    CGRect f = [v convertRect:v.bounds toView:nil];
+    CGRect sr = LGSrcRect(s);
+    CGAffineTransform old = v.transform;
+    CGFloat oldA = v.alpha;
+    CGFloat dx = CGRectGetMidX(sr) - CGRectGetMidX(f), dy = CGRectGetMidY(sr) - CGRectGetMidY(f);
+    v.alpha = 0;
+    v.transform = CGAffineTransformConcat(CGAffineTransformMakeScale(0.3, 0.3), CGAffineTransformMakeTranslation(dx, dy));
+    LGLog(@"animation dự phòng cho menu %s (morph không chạy được)", object_getClassName(container));
+    [UIView animateWithDuration:0.45 delay:0 usingSpringWithDamping:0.8 initialSpringVelocity:0
+                        options:UIViewAnimationOptionAllowUserInteraction | UIViewAnimationOptionBeginFromCurrentState
+                     animations:^{ v.transform = old; v.alpha = oldA; } completion:nil];
+}
+
 static void LGHandle(UIView *container, int attempt) {
     if (!container.window) { LGUnhide(); gBusy = NO; return; }
     if ([LGMenuMorph isActive] && [LGMenuMorph activeContainer] == container) { LGUnhide(); gBusy = NO; return; }
@@ -122,6 +154,7 @@ static void LGHandle(UIView *container, int attempt) {
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{ LGHandle(container, attempt + 1); });
         } else {
             LGLog(@"bỏ qua: menu %s không có chữ sau %d lần thử", object_getClassName(container), attempt);
+            LGFallback(container, nil);
             LGUnhide();
             gBusy = NO;
         }
@@ -134,6 +167,7 @@ static void LGHandle(UIView *container, int attempt) {
     if (!content || body == container || !body.superview) {
         LGLog(@"bỏ qua: container=%s content=%s body=%s", object_getClassName(container),
               content ? object_getClassName(content) : "nil", body ? object_getClassName(body) : "nil");
+        LGFallback(container, nil);
         LGUnhide();
         gBusy = NO;
         return;
@@ -160,6 +194,7 @@ static void LGHandle(UIView *container, int attempt) {
         LGLog(@"NGOẠI LỆ khi bắt đầu morph: %@ %@ -> hủy, trả menu về nguyên trạng", ex.name, ex.reason);
         [LGMenuMorph cancelAll];
     }
+    if (![LGMenuMorph isActive]) LGFallback(container, body);     // setup thất bại / ngoại lệ: không có phiên morph
     LGUnhide();
     gBusy = NO;
 }
@@ -178,10 +213,18 @@ static void LGHandle(UIView *container, int attempt) {
                 gTouch = [t locationInView:nil];
                 gSourceT = CACurrentMediaTime();
                 // lóe sáng + phóng to ngay khi chạm xuống nút (TRƯỚC %orig: nút chưa bị làm mờ vì highlight)
-                if (LGP.press && gSource && ![LGMenuMorph isActive] && LGRingIsCandidate(gSource)) LGPressBegin(LGGroupFor(gSource));
+                if (LGP.press && gSource && ![LGMenuMorph isActive] && LGPressIsCandidate(gSource)) LGPressBegin(LGGroupFor(gSource));
             }
         }
     }
+    %orig;
+}
+%end
+
+// App present một view controller (bảng chọn tệp...) ngay sau khi người dùng chạm mục menu -> bỏ animation đóng (xem LGMenuMorph +modalPresented)
+%hook UIViewController
+- (void)presentViewController:(UIViewController *)vc animated:(BOOL)flag completion:(void (^)(void))completion {
+    if (gEnabled && [LGMenuMorph isActive]) [LGMenuMorph modalPresented];
     %orig;
 }
 %end
@@ -227,50 +270,96 @@ static void LGHandle(UIView *container, int attempt) {
 #define LGNUM(key, field) if ([p[key] respondsToSelector:@selector(doubleValue)]) LGP.field = [p[key] doubleValue];
 static BOOL LGBoolOf(id v, BOOL def) { return [v respondsToSelector:@selector(boolValue)] ? [v boolValue] : def; }
 
+static NSString *gBid = @"";
+static BOOL gIsNotes = NO;
+
+// Đọc cài đặt: nền là file plist (chỉnh tay / bản cũ), đè lên bằng domain CFPreferences do bảng Cài đặt ghi (đọc qua cfprefsd nên app bị sandbox vẫn đọc được).
+static NSDictionary *LGReadPrefs(void) {
+    NSMutableDictionary *d = [NSMutableDictionary new];
+    for (NSString *path in @[ kOldPrefs, kPrefs ]) {
+        NSDictionary *f = [NSDictionary dictionaryWithContentsOfFile:ROOT_PATH_NS(path)];
+        if ([f isKindOfClass:NSDictionary.class]) [d addEntriesFromDictionary:f];
+    }
+    CFPreferencesAppSynchronize((__bridge CFStringRef)kDomain);
+    CFArrayRef keys = CFPreferencesCopyKeyList((__bridge CFStringRef)kDomain, kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
+    if (keys) {
+        NSDictionary *m = (__bridge_transfer NSDictionary *)CFPreferencesCopyMultiple(keys, (__bridge CFStringRef)kDomain, kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
+        if ([m isKindOfClass:NSDictionary.class]) [d addEntriesFromDictionary:m];
+        CFRelease(keys);
+    }
+    return d;
+}
+
+static void LGApplyPrefs(NSDictionary *p) {
+    BOOL isSB = [gBid isEqualToString:@"com.apple.springboard"];
+    gEnabled = LGBoolOf(p[@"enabled"], YES);
+    if (isSB && !LGBoolOf(p[@"springboard"], NO)) gEnabled = NO;
+    // onlyApps: chỉ chạy trong các app này (rỗng/không có = mọi app). excludeApps: loại trừ. "ex.<bundle id>" = công tắc loại trừ trong Cài đặt.
+    id only = p[@"onlyApps"], ex = p[@"excludeApps"];
+    if ([only isKindOfClass:NSArray.class] && ((NSArray *)only).count && ![(NSArray *)only containsObject:gBid]) gEnabled = NO;
+    if ([ex isKindOfClass:NSArray.class] && [(NSArray *)ex containsObject:gBid]) gEnabled = NO;
+    if (LGBoolOf(p[[@"ex." stringByAppendingString:gBid]], NO)) gEnabled = NO;
+
+    // hints: chỉ nhận NSString không rỗng ("" sẽ khớp mọi view; NSNumber sẽ crash ở UTF8String)
+    NSMutableArray<NSString *> *hs = [NSMutableArray new];
+    id raw = p[@"hints"];
+    if ([raw isKindOfClass:NSArray.class])
+        for (id h in (NSArray *)raw) if ([h isKindOfClass:NSString.class] && ((NSString *)h).length) [hs addObject:h];
+    gHints = hs.count ? [hs copy] : @[@"ContextMenu", @"_UIMenu", @"MenuContainer"];
+
+    LGNUM(@"omega", omega) LGNUM(@"offsetDelay", offsetDelay) LGNUM(@"contentDelay", contentDelay)
+    LGNUM(@"dotOmega", dotOmega) LGNUM(@"dotDelay", dotDelay) LGNUM(@"radOmega", radOmega)
+    LGNUM(@"radDelay", radDelay) LGNUM(@"blend", blend) LGNUM(@"speed", speed) LGNUM(@"closeDur", closeDur)
+    LGNUM(@"tint", tint) LGNUM(@"shadow", shadow) LGNUM(@"rim", rim)
+    LGNUM(@"pressScale", pressScale) LGNUM(@"pressOmega", pressOmega) LGNUM(@"pressZeta", pressZeta)
+    LGNUM(@"pressFlash", pressFlash) LGNUM(@"pressHold", pressHold)
+    LGNUM(@"ringMargin", ringMargin) LGNUM(@"ringPadX", ringPadX) LGNUM(@"groupGap", groupGap)
+    LGNUM(@"bounceAmp", bounceAmp) LGNUM(@"bounceOmega", bounceOmega) LGNUM(@"bounceZeta", bounceZeta)
+    if ([p[@"material"] respondsToSelector:@selector(intValue)]) LGP.material = [p[@"material"] intValue];
+    if ([p[@"overlayMode"] respondsToSelector:@selector(intValue)]) LGP.overlayMode = [p[@"overlayMode"] intValue];
+    LGP.useGlass = LGBoolOf(p[@"useGlass"], LGP.useGlass);
+    LGP.coverButton = LGBoolOf(p[@"coverButton"], LGP.coverButton);
+    LGP.hideSource = LGBoolOf(p[@"hideSource"], LGP.hideSource);
+    LGP.groupButtons = LGBoolOf(p[@"groupButtons"], LGP.groupButtons);
+    LGP.blurText = LGBoolOf(p[@"blurText"], LGP.blurText);
+    LGP.closeAnim = LGBoolOf(p[@"closeAnim"], LGP.closeAnim);
+    LGP.bounce = LGBoolOf(p[@"bounce"], LGP.bounce);
+    LGP.press = LGBoolOf(p[@"press"], LGP.press);
+    LGP.ring = LGBoolOf(p[@"ring"], LGP.ring);
+    LGP.ringAll = LGBoolOf(p[@"ringAll"], LGP.ringAll);
+    LGP.ringBack = LGBoolOf(p[@"ringBack"], LGP.ringBack);
+    LGP.fallbackAnim = LGBoolOf(p[@"fallbackAnim"], LGP.fallbackAnim);
+    // Log chỉ ghi khi có sự kiện menu. Dump cây view/class (nặng) mặc định chỉ bật ở Ghi chú; app khác muốn dump thì đặt dump = true.
+    LGP.dump = LGBoolOf(p[@"dump"], gIsNotes);
+    LGP.debug = LGBoolOf(p[@"debug"], LGP.debug);
+    LGParamsFinalize();
+    LGLogOn = LGP.debug;
+}
+
+// Bảng Cài đặt đổi công tắc -> Darwin notification -> mọi tiến trình đọc lại và dựng / gỡ vòng ngay, không cần mở lại app.
+static void LGPrefsChanged(CFNotificationCenterRef c, void *o, CFNotificationName n, const void *obj, CFDictionaryRef ui) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        @try {
+            LGApplyPrefs(LGReadPrefs());
+            if (!gEnabled) { LGPressFinish(); }
+            LGRingRescanAll(gEnabled);
+        } @catch (NSException *ex) { LGLog(@"NGOẠI LỆ khi đọc lại cài đặt: %@ %@", ex.name, ex.reason); }
+    });
+}
+
 %ctor {
     @autoreleasepool {
-        NSDictionary *p = [NSDictionary dictionaryWithContentsOfFile:ROOT_PATH_NS(kPrefs)] ?: @{};
-        NSString *bid = NSBundle.mainBundle.bundleIdentifier ?: @"";
-        BOOL isNotes = [bid isEqualToString:@"com.apple.mobilenotes"];
-        gEnabled = LGBoolOf(p[@"enabled"], YES);
-        if ([bid isEqualToString:@"com.apple.springboard"] && !LGBoolOf(p[@"springboard"], NO)) gEnabled = NO;
-        // onlyApps: chỉ chạy trong các app này (rỗng/không có = mọi app). excludeApps: loại trừ các app này.
-        id only = p[@"onlyApps"], ex = p[@"excludeApps"];
-        if ([only isKindOfClass:NSArray.class] && ((NSArray *)only).count && ![(NSArray *)only containsObject:bid]) gEnabled = NO;
-        if ([ex isKindOfClass:NSArray.class] && [(NSArray *)ex containsObject:bid]) gEnabled = NO;
-
-        // hints: chỉ nhận NSString không rỗng ("" sẽ khớp mọi view; NSNumber sẽ crash ở UTF8String)
-        NSMutableArray<NSString *> *hs = [NSMutableArray new];
-        id raw = p[@"hints"];
-        if ([raw isKindOfClass:NSArray.class])
-            for (id h in (NSArray *)raw) if ([h isKindOfClass:NSString.class] && ((NSString *)h).length) [hs addObject:h];
-        gHints = hs.count ? [hs copy] : @[@"ContextMenu", @"_UIMenu", @"MenuContainer"];
-
-        LGNUM(@"omega", omega) LGNUM(@"offsetDelay", offsetDelay) LGNUM(@"contentDelay", contentDelay)
-        LGNUM(@"dotOmega", dotOmega) LGNUM(@"dotDelay", dotDelay) LGNUM(@"radOmega", radOmega)
-        LGNUM(@"radDelay", radDelay) LGNUM(@"blend", blend) LGNUM(@"speed", speed) LGNUM(@"closeDur", closeDur)
-        LGNUM(@"tint", tint) LGNUM(@"shadow", shadow) LGNUM(@"rim", rim)
-        LGNUM(@"pressScale", pressScale) LGNUM(@"pressOmega", pressOmega) LGNUM(@"pressZeta", pressZeta)
-        LGNUM(@"pressFlash", pressFlash) LGNUM(@"pressHold", pressHold)
-        LGNUM(@"ringMargin", ringMargin) LGNUM(@"ringPadX", ringPadX)
-        LGNUM(@"bounceAmp", bounceAmp) LGNUM(@"bounceOmega", bounceOmega) LGNUM(@"bounceZeta", bounceZeta)
-        if ([p[@"material"] respondsToSelector:@selector(intValue)]) LGP.material = [p[@"material"] intValue];
-        LGP.useGlass = LGBoolOf(p[@"useGlass"], LGP.useGlass);
-        LGP.coverButton = LGBoolOf(p[@"coverButton"], LGP.coverButton);
-        LGP.hideSource = LGBoolOf(p[@"hideSource"], LGP.hideSource);
-        LGP.groupButtons = LGBoolOf(p[@"groupButtons"], LGP.groupButtons);
-        LGP.blurText = LGBoolOf(p[@"blurText"], LGP.blurText);
-        LGP.closeAnim = LGBoolOf(p[@"closeAnim"], LGP.closeAnim);
-        LGP.bounce = LGBoolOf(p[@"bounce"], LGP.bounce);
-        LGP.press = LGBoolOf(p[@"press"], LGP.press);
-        LGP.ring = LGBoolOf(p[@"ring"], LGP.ring);
-        LGP.ringAll = LGBoolOf(p[@"ringAll"], LGP.ringAll);
-        // Log chỉ ghi khi có sự kiện menu. Dump cây view/class (nặng) mặc định chỉ bật ở Ghi chú; app khác muốn dump thì đặt dump = true.
-        LGP.dump = LGBoolOf(p[@"dump"], isNotes);
-        LGP.debug = LGBoolOf(p[@"debug"], LGP.debug);
-        LGParamsFinalize();
-        LGLogOn = LGP.debug;
-        if (gEnabled && (isNotes || p[@"debug"])) LGLog(@"LiquidMenu v3 khởi động trong %@ log: %@", bid, LGLogPaths());
-        if (gEnabled) { %init(LGMain); }
+        NSDictionary *p = LGReadPrefs();
+        gBid = NSBundle.mainBundle.bundleIdentifier ?: @"";
+        gIsNotes = [gBid isEqualToString:@"com.apple.mobilenotes"];
+        LGApplyPrefs(p);
+        BOOL isSB = [gBid isEqualToString:@"com.apple.springboard"];
+        if (gEnabled && (gIsNotes || p[@"debug"])) LGLog(@"LiquidMenu v3 khởi động trong %@ log: %@", gBid, LGLogPaths());
+        // Luôn gắn hook (trừ SpringBoard khi springboard = false): các hook tự thoát sớm khi gEnabled = NO nên bật lại trong Cài đặt có hiệu lực ngay.
+        if (!isSB || LGBoolOf(p[@"springboard"], NO)) {
+            %init(LGMain);
+            CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, LGPrefsChanged, kReloadNote, NULL,
+                                            CFNotificationSuspensionBehaviorDeliverImmediately);
+        }
     }
 }
