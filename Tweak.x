@@ -252,6 +252,7 @@ static BOOL LGBoolOf(id v, BOOL def) { return [v respondsToSelector:@selector(bo
         LGNUM(@"tint", tint) LGNUM(@"shadow", shadow) LGNUM(@"rim", rim)
         LGNUM(@"pressScale", pressScale) LGNUM(@"pressOmega", pressOmega) LGNUM(@"pressZeta", pressZeta)
         LGNUM(@"pressFlash", pressFlash) LGNUM(@"pressHold", pressHold)
+        LGNUM(@"ringMargin", ringMargin) LGNUM(@"ringPadX", ringPadX)
         LGNUM(@"bounceAmp", bounceAmp) LGNUM(@"bounceOmega", bounceOmega) LGNUM(@"bounceZeta", bounceZeta)
         if ([p[@"material"] respondsToSelector:@selector(intValue)]) LGP.material = [p[@"material"] intValue];
         LGP.useGlass = LGBoolOf(p[@"useGlass"], LGP.useGlass);
