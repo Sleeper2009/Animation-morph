@@ -58,10 +58,12 @@ static UIView *LGPickSource(UIView *v) {
     for (UIView *c = v; c && c.bounds.size.width < 120; c = c.superview)
         if (LGButtonLike(c)) return c;
     // lượt 2: view SINH RA menu (có UIContextMenuInteraction / UIButton.menu) dù không phải UIControl hoặc hơi lớn (vd nút AA của Safari)
+    // (giới hạn như lượt 1 và loại ô nhập văn bản: menu "Dán" / sửa văn bản không phải menu của một nút, trước đây bị morph sai)
     int n = 0;
     for (UIView *c = v; c && n < 8; c = c.superview, n++) {
         CGSize s = c.bounds.size;
-        if (s.width < 240 && s.height < 90 && LGHasMenuInteraction(c)) return c;
+        if ([c conformsToProtocol:@protocol(UITextInput)]) return nil;
+        if (s.width < 120 && s.height < 80 && LGHasMenuInteraction(c)) return c;
     }
     return nil;
 }
@@ -144,9 +146,12 @@ static void LGFallback(UIView *container, UIView *body) {
                      animations:^{ v.transform = old; v.alpha = oldA; } completion:nil];
 }
 
+static NSString *gLastSig;     // chữ ký bố cục (chữ + khung) của lần thử trước, để biết menu đã dựng xong chưa
+
 static void LGHandle(UIView *container, int attempt) {
     if (!container.window) { LGUnhide(); gBusy = NO; return; }
     if ([LGMenuMorph isActive] && [LGMenuMorph activeContainer] == container) { LGUnhide(); gBusy = NO; return; }
+    [container layoutIfNeeded];
     NSMutableArray *labels = [NSMutableArray new];
     LGLabelsOf(container, labels);
     if (!labels.count) {   // menu chưa dựng xong nội dung -> thử lại vài lần
@@ -160,6 +165,19 @@ static void LGHandle(UIView *container, int attempt) {
         }
         return;
     }
+    // Hàng có tiêu đề + phụ đề được dựng/đo muộn: chụp ảnh khi bố cục chưa xong sẽ ra chữ bị cắt và chồng lên nhau.
+    // Chờ tới khi chữ + khung của mọi nhãn giống hệt lần thử trước (mỗi lần 25 ms, tối đa 6 lần).
+    NSMutableString *sg = [NSMutableString stringWithFormat:@"%p#", container];
+    for (UILabel *l in labels) {
+        CGRect lr = [l convertRect:l.bounds toView:nil];
+        [sg appendFormat:@"%@@%.0f,%.0f,%.0f,%.0f|", l.text, lr.origin.x, lr.origin.y, lr.size.width, lr.size.height];
+    }
+    if (attempt < 6 && ![sg isEqualToString:gLastSig ?: @""]) {
+        gLastSig = sg;
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 25 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{ LGHandle(container, attempt + 1); });
+        return;
+    }
+    gLastSig = nil;
     UIView *content = LGLCA(labels);
     UIView *body = content;   // leo lên đến view "thân menu" (nhỏ hơn ~90% bề rộng container)
     while (body.superview && body.superview != container &&
@@ -287,6 +305,9 @@ static NSDictionary *LGReadPrefs(void) {
         if ([m isKindOfClass:NSDictionary.class]) [d addEntriesFromDictionary:m];
         CFRelease(keys);
     }
+    NSUserDefaults *su = [[NSUserDefaults alloc] initWithSuiteName:kDomain];
+    NSDictionary *sd = [su persistentDomainForName:kDomain];
+    if ([sd isKindOfClass:NSDictionary.class]) [d addEntriesFromDictionary:sd];
     return d;
 }
 
@@ -324,7 +345,9 @@ static void LGApplyPrefs(NSDictionary *p) {
     LGP.blurText = LGBoolOf(p[@"blurText"], LGP.blurText);
     LGP.closeAnim = LGBoolOf(p[@"closeAnim"], LGP.closeAnim);
     LGP.bounce = LGBoolOf(p[@"bounce"], LGP.bounce);
-    LGP.press = LGBoolOf(p[@"press"], LGP.press);
+    LGP.pressFlashOn = LGBoolOf(p[@"flash"], YES);
+    LGP.pressZoomOn = LGBoolOf(p[@"zoom"], YES);
+    LGP.press = LGP.pressFlashOn || LGP.pressZoomOn;
     LGP.ring = LGBoolOf(p[@"ring"], LGP.ring);
     LGP.ringAll = LGBoolOf(p[@"ringAll"], LGP.ringAll);
     LGP.ringBack = LGBoolOf(p[@"ringBack"], LGP.ringBack);
@@ -334,6 +357,8 @@ static void LGApplyPrefs(NSDictionary *p) {
     LGP.debug = LGBoolOf(p[@"debug"], LGP.debug);
     LGParamsFinalize();
     LGLogOn = LGP.debug;
+    LGLog(@"cài đặt [%@]: bật=%d vòng=%d vòngQuayLại=%d lóe=%d phóng=%d nảy=%d gộp=%d dựPhòng=%d", gBid, gEnabled, LGP.ring, LGP.ringBack,
+          LGP.pressFlashOn, LGP.pressZoomOn, LGP.bounce, LGP.groupButtons, LGP.fallbackAnim);
 }
 
 // Bảng Cài đặt đổi công tắc -> Darwin notification -> mọi tiến trình đọc lại và dựng / gỡ vòng ngay, không cần mở lại app.
@@ -341,7 +366,7 @@ static void LGPrefsChanged(CFNotificationCenterRef c, void *o, CFNotificationNam
     dispatch_async(dispatch_get_main_queue(), ^{
         @try {
             LGApplyPrefs(LGReadPrefs());
-            if (!gEnabled) { LGPressFinish(); }
+            if (!gEnabled) { LGPressFinish(); [LGMenuMorph cancelAll]; }
             LGRingRescanAll(gEnabled);
         } @catch (NSException *ex) { LGLog(@"NGOẠI LỆ khi đọc lại cài đặt: %@ %@", ex.name, ex.reason); }
     });
