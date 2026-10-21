@@ -27,9 +27,10 @@ jobs:
       # Cho phép upload cả thư mục LiquidMenu/ lồng bên trong repo: lấy thư mục chứa Makefile
       - name: Tìm thư mục project
         run: |
-          MK=$(find . -maxdepth 2 -name Makefile -not -path './.git/*' | head -n 1)
+          # Thư mục project = nơi có file control (liquidmenuprefs/ cũng có Makefile nên không dò theo Makefile được nữa)
+          MK=$(find . -maxdepth 2 -name control -not -path './.git/*' | head -n 1)
           if [ -z "$MK" ]; then
-            echo "::error::Không thấy Makefile. Makefile phải nằm cùng chỗ với Tweak.x"
+            echo "::error::Không thấy file control. File control phải nằm cùng chỗ với Makefile và Tweak.x"
             exit 1
           fi
           echo "PROJ=$(cd "$(dirname "$MK")" && pwd)" >> "$GITHUB_ENV"
