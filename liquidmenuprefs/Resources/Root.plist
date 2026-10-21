@@ -1,0 +1,163 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>items</key>
+	<array>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>footerText</key>
+			<string>Thay animation mở / đóng menu của nút bằng hiệu ứng morph. Đổi công tắc có hiệu lực ngay, không cần mở lại ứng dụng.</string>
+			<key>label</key>
+			<string>LiquidMenu</string>
+		</dict>
+		<dict>
+			<key>PostNotification</key>
+			<string>com.fujb-2009.liquidmenu/reload</string>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>default</key>
+			<true/>
+			<key>defaults</key>
+			<string>com.fujb-2009.liquidmenu</string>
+			<key>key</key>
+			<string>enabled</string>
+			<key>label</key>
+			<string>Bật LiquidMenu</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>footerText</key>
+			<string>Vòng luôn hiện quanh nút mở menu, kể cả khi không chạm.</string>
+			<key>label</key>
+			<string>Vòng tròn quanh nút</string>
+		</dict>
+		<dict>
+			<key>PostNotification</key>
+			<string>com.fujb-2009.liquidmenu/reload</string>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>default</key>
+			<true/>
+			<key>defaults</key>
+			<string>com.fujb-2009.liquidmenu</string>
+			<key>key</key>
+			<string>ring</string>
+			<key>label</key>
+			<string>Vòng tròn quanh nút ở trạng thái chờ</string>
+		</dict>
+		<dict>
+			<key>PostNotification</key>
+			<string>com.fujb-2009.liquidmenu/reload</string>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>default</key>
+			<true/>
+			<key>defaults</key>
+			<string>com.fujb-2009.liquidmenu</string>
+			<key>key</key>
+			<string>ringBack</string>
+			<key>label</key>
+			<string>Vòng tròn quanh mục quay lại</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
+			<string>Hiệu ứng</string>
+		</dict>
+		<dict>
+			<key>PostNotification</key>
+			<string>com.fujb-2009.liquidmenu/reload</string>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>default</key>
+			<true/>
+			<key>defaults</key>
+			<string>com.fujb-2009.liquidmenu</string>
+			<key>key</key>
+			<string>press</string>
+			<key>label</key>
+			<string>Lóe sáng + phóng to khi ấn nút</string>
+		</dict>
+		<dict>
+			<key>PostNotification</key>
+			<string>com.fujb-2009.liquidmenu/reload</string>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>default</key>
+			<true/>
+			<key>defaults</key>
+			<string>com.fujb-2009.liquidmenu</string>
+			<key>key</key>
+			<string>bounce</string>
+			<key>label</key>
+			<string>Nảy lò xo khi đóng menu</string>
+		</dict>
+		<dict>
+			<key>PostNotification</key>
+			<string>com.fujb-2009.liquidmenu/reload</string>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>default</key>
+			<true/>
+			<key>defaults</key>
+			<string>com.fujb-2009.liquidmenu</string>
+			<key>key</key>
+			<string>groupButtons</string>
+			<key>label</key>
+			<string>Gộp các nút liền nhau thành một viên thuốc</string>
+		</dict>
+		<dict>
+			<key>PostNotification</key>
+			<string>com.fujb-2009.liquidmenu/reload</string>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>default</key>
+			<true/>
+			<key>defaults</key>
+			<string>com.fujb-2009.liquidmenu</string>
+			<key>key</key>
+			<string>fallbackAnim</string>
+			<key>label</key>
+			<string>Animation dự phòng khi không morph được</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
+			<string>Ứng dụng</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSLinkCell</string>
+			<key>detail</key>
+			<string>LMAppsListController</string>
+			<key>isController</key>
+			<true/>
+			<key>label</key>
+			<string>Ứng dụng không dùng animation</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>footerText</key>
+			<string>Respring khi vừa cài hoặc cập nhật LiquidMenu để SpringBoard nạp lại.</string>
+			<key>label</key>
+			<string>Hệ thống</string>
+		</dict>
+		<dict>
+			<key>action</key>
+			<string>respring</string>
+			<key>cell</key>
+			<string>PSButtonCell</string>
+			<key>label</key>
+			<string>Respring</string>
+		</dict>
+	</array>
+	<key>title</key>
+	<string>LiquidMenu</string>
+</dict>
+</plist>
