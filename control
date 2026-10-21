@@ -6,4 +6,4 @@ Description: Thêm Animation vào các nút
 Maintainer: fujb
 Author: fujb
 Section: Tweaks
-Depends: mobilesubstrate (>= 0.9.5000)
+Depends: mobilesubstrate (>= 0.9.5000), preferenceloader
