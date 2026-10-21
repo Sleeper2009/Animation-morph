@@ -78,10 +78,116 @@ BOOL LGRingIsCandidate(UIView *v) {
     return v && LGRingBase(v) && !LGDescHasCandidate(v, 0);
 }
 
+// ------------------------------------------------------------------ khung nhìn thấy của nút
+// Gom khung các view con có nội dung thật (ảnh / chữ), bỏ qua vòng của ta.
+static void LGCollect(UIView *v, int depth, CGRect *u, BOOL *text) {
+    if (depth > 6) return;
+    for (UIView *s in v.subviews) {
+        if ([s isKindOfClass:LGRingView.class] || s.hidden || s.alpha < 0.05) continue;
+        BOOL leaf = NO, isText = NO;
+        if ([s isKindOfClass:UIImageView.class]) {
+            UIImageView *iv = (UIImageView *)s;
+            leaf = iv.image != nil || iv.highlightedImage != nil;
+        } else if ([s isKindOfClass:UILabel.class]) {
+            UILabel *l = (UILabel *)s;
+            leaf = l.text.length > 0 || l.attributedText.length > 0;
+            isText = leaf;
+        }
+        if (leaf) {
+            CGRect r = [s convertRect:s.bounds toView:nil];
+            if (r.size.width >= 2 && r.size.height >= 2 && r.size.width <= 200) {
+                *u = CGRectUnion(*u, r);
+                if (isText) *text = YES;
+            }
+        } else {
+            LGCollect(s, depth + 1, u, text);
+        }
+    }
+}
+
+// Nút thanh điều hướng thường lồng nhau (_UIButtonBarButton > nút trong): tìm nội dung từ lớp NGOÀI CÙNG còn là nút nhỏ.
+static UIView *LGSrcRoot(UIView *v) {
+    UIView *root = v;
+    while (root.superview && LGButtonLike(root.superview) &&
+           root.superview.bounds.size.width < 120 && root.superview.bounds.size.height < 80) root = root.superview;
+    return root;
+}
+
+// Vùng nội dung nhìn thấy (toạ độ cửa sổ). Ưu tiên view con; nếu nút tự vẽ nội dung (không có ảnh/chữ con) thì đo bbox các điểm ảnh khác trong suốt.
+static BOOL LGContentRect(UIView *v, CGRect *out, BOOL *text) {
+    CGRect c = CGRectNull;
+    BOOL t = NO;
+    LGCollect(LGSrcRoot(v), 0, &c, &t);
+    if (!CGRectIsNull(c) && !CGRectIsEmpty(c)) { *out = c; *text = t; return YES; }
+    if (v.hidden || v.alpha < 0.05) return NO;
+    CGSize sz = v.bounds.size;
+    if (sz.width < 4 || sz.height < 4 || sz.width > 200 || sz.height > 100) return NO;
+    const int S = 2;
+    size_t w = (size_t)ceil(sz.width * S), h = (size_t)ceil(sz.height * S);
+    uint8_t *buf = calloc(w * h, 1);
+    if (!buf) return NO;
+    CGContextRef g = CGBitmapContextCreate(buf, w, h, 8, w, NULL, (CGBitmapInfo)kCGImageAlphaOnly);
+    if (!g) { free(buf); return NO; }
+    CGContextTranslateCTM(g, 0, (CGFloat)h);
+    CGContextScaleCTM(g, S, -S);
+    [v.layer renderInContext:g];
+    long x0 = (long)w, x1 = -1, y0 = (long)h, y1 = -1;
+    for (size_t r = 0; r < h; r++)
+        for (size_t col = 0; col < w; col++)
+            if (buf[r * w + col] > 20) {
+                if ((long)col < x0) x0 = (long)col;
+                if ((long)col > x1) x1 = (long)col;
+                if ((long)r < y0) y0 = (long)r;
+                if ((long)r > y1) y1 = (long)r;
+            }
+    CGContextRelease(g);
+    free(buf);
+    if (x1 < x0 || y1 < y0) return NO;
+    CGRect pr = CGRectMake(x0 / (CGFloat)S, y0 / (CGFloat)S, (x1 - x0 + 1) / (CGFloat)S, (y1 - y0 + 1) / (CGFloat)S);
+    *out = [v convertRect:pr toView:nil];
+    *text = out->size.width > out->size.height * 1.8;     // không biết có chữ hay không: nội dung dẹt -> coi như chữ
+    return YES;
+}
+
+CGRect LGSrcRect(UIView *v) {
+    CGRect b = [v convertRect:v.bounds toView:nil];
+    CGRect c;
+    BOOL hasText = NO;
+    if (!LGContentRect(v, &c, &hasText)) return b;       // không thấy nội dung: dùng khung nút
+    double Wd = v.window ? v.window.bounds.size.width : 0;
+    double H = fmin(fmax(b.size.height, 32), 48);
+    double m = LGP.ringMargin, padX = LGP.ringPadX;
+    CGRect r;
+    if (hasText) {
+        // nút chữ: viên thuốc = chữ + đệm hai bên; sát lề thì cắt bớt đệm phía lề, nhưng luôn chừa >= 4 pt quanh chữ
+        double W = c.size.width + 2 * padX;
+        r = CGRectMake(CGRectGetMidX(c) - W / 2, CGRectGetMidY(c) - H / 2, W, H);
+        if (Wd > 0) {
+            if (r.origin.x < m) { double d = m - r.origin.x; r.origin.x += d; r.size.width -= d; }
+            if (CGRectGetMaxX(r) > Wd - m) r.size.width = Wd - m - r.origin.x;
+        }
+        r = CGRectUnion(r, CGRectInset(c, -4, 0));
+    } else {
+        // nút icon: hình tròn tâm đúng giữa icon; sát lề thì thu nhỏ đường kính (giữ nguyên tâm), nhưng không nhỏ hơn icon + 8 pt
+        double D = fmax(H, fmax(c.size.width, c.size.height) + 12);
+        if (Wd > 0) D = fmin(D, 2 * fmin(CGRectGetMidX(c) - m, Wd - m - CGRectGetMidX(c)));
+        D = fmax(D, fmax(c.size.width, c.size.height) + 8);
+        r = CGRectMake(CGRectGetMidX(c) - D / 2, CGRectGetMidY(c) - D / 2, D, D);
+    }
+    return r;
+}
+
 // ------------------------------------------------------------------ dựng / cập nhật
+// Vòng là view ANH EM nằm DƯỚI cùng của view cha (không phải view con của nút): view con của nút luôn vẽ đè lên nội dung riêng của nút
+// (biểu tượng nút tự vẽ bị che mất). Vì không còn là con của nút nên không tự theo nút -> bộ đếm giờ 10 Hz đồng bộ khung/độ mờ.
+static NSHashTable<UIView *> *gOwners;
+static NSTimer *gTimer;
+static void LGRingRefresh(UIView *v, int attempt, BOOL quiet);
+
 static LGRingView *LGRingOf(UIView *v) { return objc_getAssociatedObject(v, kRingKey); }
 
 static void LGRingRemove(UIView *v) {
+    [gOwners removeObject:v];
     LGRingView *r = LGRingOf(v);
     if (!r) return;
     [r removeFromSuperview];
@@ -97,19 +203,44 @@ static UIView *LGCommonAncestor(NSArray<UIView *> *views) {
     return nil;
 }
 
-static void LGRingRefresh(UIView *v, int attempt) {
+// Độ mờ hiệu dụng từ view lên tới `stop` (không tính stop), theo trạng thái ĐANG chạy của animation (presentationLayer).
+static CGFloat LGEffAlpha(UIView *v, UIView *stop) {
+    CGFloat a = 1;
+    for (UIView *cur = v; cur && cur != stop; cur = cur.superview) {
+        if (cur.hidden) return 0;
+        CALayer *pl = cur.layer.presentationLayer;
+        a *= pl ? pl.opacity : cur.alpha;
+    }
+    return a;
+}
+
+static void LGRingTick(void) {
+    for (UIView *o in gOwners.allObjects) {
+        if (!o.window || !LGP.ring) { LGRingRemove(o); continue; }
+        LGRingRefresh(o, 99, YES);
+    }
+    if (!gOwners.count) { [gTimer invalidate]; gTimer = nil; }
+}
+
+static void LGRingEnsureTimer(void) {
+    if (gTimer) return;
+    gTimer = [NSTimer timerWithTimeInterval:0.1 repeats:YES block:^(NSTimer *t) { LGRingTick(); }];
+    [NSRunLoop.mainRunLoop addTimer:gTimer forMode:NSRunLoopCommonModes];
+}
+
+static void LGRingRefresh(UIView *v, int attempt, BOOL quiet) {
     if (!v) return;
     if (!LGP.ring || !v.window || !LGRingIsCandidate(v)) { LGRingRemove(v); return; }
-    CGRect r = [v convertRect:v.bounds toView:nil];
-    if (r.size.width < 8 || r.size.height < 8) {      // chưa layout xong -> thử lại vài lần
+    CGRect r0 = [v convertRect:v.bounds toView:nil];
+    if (r0.size.width < 8 || r0.size.height < 8) {      // chưa layout xong -> thử lại vài lần
         if (attempt < 4) {
             __weak UIView *w = v;
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 80 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{ LGRingRefresh(w, attempt + 1); });
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 80 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{ LGRingRefresh(w, attempt + 1, NO); });
         }
         return;
     }
 
-    // nhóm nút liền nhau (vd chia sẻ + "…") -> MỘT viên thuốc; nút ứng viên ngoài cùng bên trái giữ vòng
+    // nhóm nút liền nhau (vd Sửa + "…") -> MỘT viên thuốc; nút ứng viên ngoài cùng bên trái giữ vòng
     NSArray<UIView *> *group = LGGroupFor(v);
     UIView *owner = nil;
     CGRect u = CGRectNull;
@@ -117,35 +248,45 @@ static void LGRingRefresh(UIView *v, int attempt) {
     for (UIView *b in group) {
         if (!b.window) continue;
         CGRect br = [b convertRect:b.bounds toView:nil];
-        u = CGRectUnion(u, br);
+        u = CGRectUnion(u, LGSrcRect(b));
         if (LGRingIsCandidate(b) && (!owner || br.origin.x < ownerX)) { owner = b; ownerX = br.origin.x; }
     }
     if (!owner) owner = v;
     if (owner != v) LGRingRemove(v);
-    if (CGRectIsNull(u)) u = r;
+    if (CGRectIsNull(u)) u = LGSrcRect(v);
 
-    BOOL single = group.count <= 1;
-    UIView *parent = single ? owner : (LGCommonAncestor(group) ?: owner);
+    UIView *parent = group.count <= 1 ? owner.superview : (LGCommonAncestor(group) ?: owner.superview);
+    if (!parent) return;
     LGRingView *ring = LGRingOf(owner);
+    BOOL fresh = NO;
     if (!ring) {
         ring = [[LGRingView alloc] initWithFrame:CGRectZero];
         objc_setAssociatedObject(owner, kRingKey, ring, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        fresh = YES;
     }
-    if (ring.superview != parent) [parent insertSubview:ring atIndex:0];    // sau mọi thứ khác: dưới icon của nút
-    ring.frame = single ? parent.bounds : [parent convertRect:u fromView:nil];
-    // một nút: ăn theo kích thước nút tự động; nhóm: khung đã tính theo vị trí hiện tại (làm lại khi view vào window)
-    ring.autoresizingMask = single ? (UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight) : UIViewAutoresizingNone;
-    [ring setNeedsLayout];
-    LGLog(@"vòng: %s %@ (%lu nút) bo=%.1f", object_getClassName(owner), NSStringFromCGRect(u), (unsigned long)group.count, fmin(u.size.width, u.size.height) / 2);
+    if (!gOwners) gOwners = [NSHashTable weakObjectsHashTable];
+    [gOwners addObject:owner];
+    LGRingEnsureTimer();
+
+    if (ring.superview != parent) [parent insertSubview:ring atIndex:0];
+    else if (parent.subviews.firstObject != ring) [parent sendSubviewToBack:ring];   // UIKit có thể đã chèn thứ gì đó xuống dưới
+    CGRect target = [parent convertRect:u fromView:nil];
+    BOOL moved = fabs(ring.frame.origin.x - target.origin.x) > 0.5 || fabs(ring.frame.origin.y - target.origin.y) > 0.5 ||
+                 fabs(ring.frame.size.width - target.size.width) > 0.5 || fabs(ring.frame.size.height - target.size.height) > 0.5;
+    if (moved) { ring.frame = target; [ring setNeedsLayout]; }
+    ring.alpha = LGEffAlpha(owner, parent);     // nút mờ dần (chuyển trang…) thì vòng mờ theo
+    if (fresh || (moved && !quiet))
+        LGLog(@"vòng: %s %@ (%lu nút) bo=%.1f cha=%s", object_getClassName(owner), NSStringFromCGRect(u), (unsigned long)group.count,
+              fmin(u.size.width, u.size.height) / 2, object_getClassName(parent));
 }
 
 void LGRingSchedule(UIView *v) {
     if (!LGP.ring || !v) return;
     __weak UIView *w = v;
-    // lần 1: ngay sau layout đầu; lần 2: sau khi thanh điều hướng xếp xong (hiệu ứng push)
+    // lần 1: ngay sau layout đầu; lần 2: sau khi thanh điều hướng xếp xong (hiệu ứng push). Sau đó bộ đếm giờ 10 Hz lo phần còn lại.
     double delays[2] = { 0.05, 0.5 };
     for (int i = 0; i < 2; i++)
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delays[i] * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ LGRingRefresh(w, 0); });
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delays[i] * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ LGRingRefresh(w, 0, NO); });
 }
 
 void LGRingDetach(UIView *v) {
@@ -158,6 +299,7 @@ BOOL LGRingHide(NSArray<UIView *> *views, BOOL hide) {
         LGRingView *r = LGRingOf(v);
         if (!r) continue;
         r.hidden = hide;
+        if (!hide) r.alpha = 1;     // hiện lại ngay cùng lúc nút (bộ đếm giờ sẽ chỉnh lại độ mờ thật sau tối đa 0,1 s)
         any = YES;
     }
     return any;
@@ -195,7 +337,7 @@ static LGPress *gPress;
     NSMutableArray<UIView *> *srcs = [NSMutableArray new];
     for (UIView *v in sources) {
         if (!v.window) continue;
-        CGRect r = [v convertRect:v.bounds toView:nil];
+        CGRect r = LGSrcRect(v);     // cùng khung với vòng cố định và morph
         if (CGRectIsEmpty(r) || r.size.width > 200 || r.size.height > 100) continue;
         u = CGRectUnion(u, r);
         [srcs addObject:v];
