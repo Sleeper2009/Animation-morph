@@ -13,7 +13,7 @@ LGParams LGP = { .omega = 29.0, .offsetDelay = 0.124, .contentDelay = 0.048,
                  .blend = 24.0, .dur = 0.5, .closeDur = 0.38, .speed = 1.0,
                  .tint = 0.12, .shadow = 0.18, .rim = 0.14, .material = -1,
                  .bounceAmp = 10.0, .bounceOmega = 22.0, .bounceZeta = 0.4, .bounce = YES, .ring = YES, .ringAll = NO,
-                 .pressScale = 1.30, .pressOmega = 34.0, .pressZeta = 0.55, .pressFlash = 1.0, .pressHold = 0.12, .press = YES, .ringMargin = 8.0, .ringPadX = 12.0,
+                 .pressScale = 1.30, .pressOmega = 34.0, .pressZeta = 0.55, .pressFlash = 1.0, .pressHold = 0.12, .press = YES, .ringMargin = 8.0, .ringPadX = 12.0, .ringBack = YES, .fallbackAnim = YES, .groupGap = 16.0, .overlayMode = 0,
                  .useGlass = YES, .debug = YES, .coverButton = YES, .hideSource = YES, .groupButtons = YES,
                  .blurText = YES, .closeAnim = YES, .dump = YES };
 
@@ -42,6 +42,8 @@ void LGParamsFinalize(void) {
     LGP.pressHold = fmin(fmax(LGP.pressHold, 0.0), 0.6);
     LGP.ringMargin = fmin(fmax(LGP.ringMargin, 0.0), 40.0);
     LGP.ringPadX = fmin(fmax(LGP.ringPadX, 0.0), 30.0);
+    LGP.groupGap = fmin(fmax(LGP.groupGap, 0.0), 60.0);
+    if (LGP.overlayMode < 0 || LGP.overlayMode > 2) LGP.overlayMode = 0;
     if (LGP.material < -1) LGP.material = -1;
     if (LGP.material > 4) LGP.material = 4;
     // spring 1 - (1+x)e^-x còn ~0.3% ở x = 8  ->  thời gian ổn định = delay + 8/omega
@@ -233,13 +235,15 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
     double _baseA, _baseS;
     CGPoint _bdir;        // hướng nảy khi đóng (vector đơn vị chéo): NGƯỢC phía menu mở ra
     double _bt, _bdur;    // thời gian đã nảy / tổng thời gian nảy (s)
+    BOOL _skipClose;      // app đã present bảng khác sau khi chạm mục menu: đóng không animation
+    CFTimeInterval _insideEndT;   // lần nhả tay gần nhất bên trong menu
     NSString *_sig, *_lastWatch, *_labelSig;
 }
 @property (nonatomic, weak) UIView *container, *body, *content;
 @property (nonatomic, strong) NSArray<UIView *> *sources;
 @property (nonatomic, strong) NSMutableArray<NSNumber *> *srcAlpha;
 @property (nonatomic, strong) NSMutableArray<UIView *> *iconSnaps;
-@property (nonatomic, strong) UIWindow *ow;
+@property (nonatomic, strong) UIView *ow;      // UIWindow riêng, hoặc view phủ kín trong cửa sổ menu (xem LGMakeOverlay)
 @property (nonatomic, strong) UIView *reg, *clip, *fullSnap;
 @property (nonatomic, strong) UIVisualEffectView *fx;
 @property (nonatomic, strong) CAShapeLayer *shadowL, *shadowMask, *fxMask, *tintL, *clipMask, *rimL;
@@ -253,6 +257,16 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
 + (BOOL)isActive { return gSession && gSession.state != LGStDone; }
 + (UIView *)activeContainer { return gSession.container; }
 + (void)cancelAll { [gSession abort:@"cancelAll"]; }
+
++ (void)modalPresented {
+    LGMenuMorph *m = gSession;
+    if (!m || m.state == LGStDone) return;
+    double age = CACurrentMediaTime() - m->_insideEndT;
+    if (m->_insideEndT > 0 && age < 1.5 && (m.state == LGStOpening || m.state == LGStOpen)) {
+        m->_skipClose = YES;
+        LGLog(@"app present bảng khác %.2f s sau khi chạm mục menu -> sẽ bỏ animation đóng", age);
+    }
+}
 
 + (void)beginWithContainer:(UIView *)container body:(UIView *)body sources:(NSArray<UIView *> *)sources fallbackRect:(CGRect)fb {
     if (gSession) {
@@ -356,12 +370,7 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
 }
 
 - (void)buildOverlayFor:(UIWindow *)win {
-    UIWindowScene *sc = win.windowScene;
-    UIWindow *ow = sc ? [[UIWindow alloc] initWithWindowScene:sc] : [[UIWindow alloc] initWithFrame:win.bounds];
-    ow.frame = win.frame;
-    ow.windowLevel = fmax(UIWindowLevelAlert + 100, win.windowLevel + 1);
-    ow.backgroundColor = UIColor.clearColor;
-    ow.userInteractionEnabled = NO;
+    UIView *ow = LGMakeOverlay(win);
     self.ow = ow;
 
     _R = CGRectInset(CGRectUnion(_F, _src), -56, -56);
@@ -535,7 +544,7 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
     }
     _tau = 0;
     [self renderAt:0];
-    self.ow.hidden = NO;
+    LGOverlayShow(self.ow);
     _lastT = CACurrentMediaTime();
     self.link = [CADisplayLink displayLinkWithTarget:self selector:@selector(tick:)];
     [self.link addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
@@ -646,12 +655,28 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
             if (!alive) { [self startClose:@"menu biến mất khi đang mở"]; return; }
             _tau += dt * LGP.speed;
             [self pinBody];
-            if (_tau >= _spec.dur) { [self finishOpen]; return; }
+            if (_tau >= _spec.dur) {
+                // vừa mở xong mà hệ thống đã đang đóng menu (người dùng ấn trong lúc mở): KHÔNG trả menu thật (sẽ lộ cả dòng kẻ phân cách) mà đóng tiếp luôn
+                if ([self systemDismissing]) { _tau = _spec.dur; [self renderAt:_tau]; [self startClose:@"hệ thống đã đóng khi vừa mở xong"]; return; }
+                [self finishOpen];
+                return;
+            }
             [self renderAt:_tau];
             break;
         case LGStOpen:
             if (!alive) { [self startClose:@"menu bị gỡ khỏi window"]; return; }
-            if ([self systemDismissing]) { [self startClose:@"hệ thống đang đóng menu"]; return; }
+            if ([self systemDismissing]) {
+                // menu mở ra bảng khác (bảng chọn tệp...) thì menu thật nằm lại khá lâu rồi mới đóng: chạy animation đóng ở lúc đó trông rất lạ -> bỏ
+                double age = now - _insideEndT;
+                if (_skipClose || (_insideEndT > 0 && age > 0.45 && age < 4.0)) {
+                    LGLog(@"BỎ animation đóng: %@ (nhả tay trong menu cách đây %.2f s)", _skipClose ? @"app vừa present bảng khác" : @"menu đóng muộn bất thường", age);
+                    self.body.hidden = NO;
+                    [self finishAll:@"bỏ animation đóng (menu mở ra thứ khác)"];
+                    return;
+                }
+                [self startClose:@"hệ thống đang đóng menu"];
+                return;
+            }
             [self checkContent];
             [self pinBody];
             break;
@@ -803,7 +828,7 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
     if (self.state == LGStOpen) {
         _tau = _spec.dur;
         [self renderAt:_tau];
-        self.ow.hidden = NO;
+        LGOverlayShow(self.ow);
     }
     self.body.hidden = YES;      // (menu thật đang bị hệ thống đóng, lớp phủ của ta thay thế nó)
     self.state = LGStClosing;
@@ -861,7 +886,7 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
     [self.link invalidate];
     self.link = nil;
     [self restoreSources];
-    self.ow.hidden = YES;
+    LGOverlayDrop(self.ow);
     self.ow = nil;
     self.reg = nil;
     self.state = LGStDone;
@@ -911,6 +936,12 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
             [gTouches removeObjectForKey:t];
             if (!was) break;
             LGLog(@"chạm lên %@ (bắt đầu %@) phase=%ld", NSStringFromCGPoint(p), was.boolValue ? @"trong menu" : @"ngoài menu", (long)t.phase);
+            if (was.boolValue) _insideEndT = CACurrentMediaTime();
+            if (self.state == LGStOpening && t.phase == UITouchPhaseEnded) {
+                // ấn trong lúc đang mở (menu thật đang bị ẩn nên không có mục nào nhận được cú ấn): đảo ngược animation từ khung hình hiện tại
+                [self startClose:@"chạm khi đang mở"];
+                break;
+            }
             if (!was.boolValue && t.phase == UITouchPhaseEnded) [self startClose:@"chạm ngoài menu"];
             break;
         }
