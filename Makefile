@@ -16,3 +16,7 @@ LiquidMenu_FRAMEWORKS = UIKit QuartzCore CoreGraphics CoreImage
 LiquidMenu_CFLAGS = -fobjc-arc -Wno-deprecated-declarations
 
 include $(THEOS_MAKE_PATH)/tweak.mk
+
+# Gói Cài đặt (công tắc, Respring, ứng dụng loại trừ): thư mục liquidmenuprefs/ + layout/Library/PreferenceLoader/ (khai báo mục trong Cài đặt)
+SUBPROJECTS += liquidmenuprefs
+include $(THEOS_MAKE_PATH)/aggregate.mk
