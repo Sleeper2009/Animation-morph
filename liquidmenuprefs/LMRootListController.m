@@ -29,7 +29,7 @@ extern char **environ;
         if (posix_spawn(&pid, killall[i], NULL, NULL, argv, environ) == 0) return;
     }
     UIAlertController *a = [UIAlertController alertControllerWithTitle:@"Không respring được"
-                                                               message:@"Không tìm thấy sbreload hoặc killall. Hãy respring bằng cách khác."
+                                                               message:@"Hãy respring bằng cách khác."
                                                         preferredStyle:UIAlertControllerStyleAlert];
     [a addAction:[UIAlertAction actionWithTitle:@"Đóng" style:UIAlertActionStyleCancel handler:nil]];
     [self presentViewController:a animated:YES completion:nil];
