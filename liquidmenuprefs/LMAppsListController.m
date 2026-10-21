@@ -44,8 +44,8 @@
 - (NSArray *)specifiers {
     if (!_specifiers) {
         NSMutableArray *specs = [NSMutableArray new];
-        PSSpecifier *g = [PSSpecifier groupSpecifierWithName:@"Ứng dụng không dùng animation"];
-        [g setProperty:@"Bật công tắc của một ứng dụng = ứng dụng đó KHÔNG dùng animation của LiquidMenu (có hiệu lực ngay, không cần mở lại ứng dụng)." forKey:@"footerText"];
+        PSSpecifier *g = [PSSpecifier groupSpecifierWithName:@"Ứng dụng"];
+        [g setProperty:@"Bật = ứng dụng đó không dùng animation." forKey:@"footerText"];
         [specs addObject:g];
         CGFloat scale = UIScreen.mainScreen.scale;
         for (NSDictionary *app in [self installedApps]) {
