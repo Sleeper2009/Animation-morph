@@ -13,7 +13,7 @@ LGParams LGP = { .omega = 29.0, .offsetDelay = 0.124, .contentDelay = 0.048,
                  .blend = 24.0, .dur = 0.5, .closeDur = 0.38, .speed = 1.0,
                  .tint = 0.12, .shadow = 0.18, .rim = 0.14, .material = -1,
                  .bounceAmp = 10.0, .bounceOmega = 22.0, .bounceZeta = 0.4, .bounce = YES, .ring = YES, .ringAll = NO,
-                 .pressScale = 1.30, .pressOmega = 34.0, .pressZeta = 0.55, .pressFlash = 1.0, .pressHold = 0.12, .press = YES, .ringMargin = 8.0, .ringPadX = 12.0, .ringBack = YES, .fallbackAnim = YES, .groupGap = 16.0, .overlayMode = 0,
+                 .pressScale = 1.30, .pressOmega = 34.0, .pressZeta = 0.55, .pressFlash = 1.0, .pressHold = 0.12, .press = YES, .pressFlashOn = YES, .pressZoomOn = YES, .ringMargin = 8.0, .ringPadX = 12.0, .ringBack = YES, .fallbackAnim = YES, .groupGap = 16.0, .overlayMode = 0,
                  .useGlass = YES, .debug = YES, .coverButton = YES, .hideSource = YES, .groupButtons = YES,
                  .blurText = YES, .closeAnim = YES, .dump = YES };
 
@@ -83,7 +83,7 @@ static NSString *LGLabelSig(UIView *root) {
     NSMutableArray<UILabel *> *ls = [NSMutableArray new];
     LGLabels(root, ls);
     NSMutableString *s = [NSMutableString string];
-    for (UILabel *l in ls) { [s appendString:l.text]; [s appendString:@"|"]; }
+    for (UILabel *l in ls) { [s appendFormat:@"%@@%.0fx%.0f|", l.text, l.bounds.size.width, l.bounds.size.height]; }
     return s;
 }
 
@@ -166,6 +166,37 @@ static UIImage *LGBlurred(UIImage *img, double sigmaPt) {
     UIImage *u = [UIImage imageWithCGImage:cg scale:img.scale orientation:UIImageOrientationUp];
     CGImageRelease(cg);
     return u;
+}
+
+// Vùng NHÌN THẤY của một hàng, tính cả chữ / icon tràn ra ngoài khung hàng (hàng có tiêu đề + phụ đề: chữ nằm lệch khỏi khung nên bị cắt mất nửa).
+static CGRect LGRowVisual(UIView *v) {
+    CGRect u = v.bounds;
+    NSMutableArray<UIView *> *q = [NSMutableArray arrayWithObject:v];
+    for (int d = 0; d < 5 && q.count; d++) {
+        NSMutableArray<UIView *> *nx = [NSMutableArray new];
+        for (UIView *a in q)
+            for (UIView *s in a.subviews) {
+                if (s.hidden || s.alpha < 0.01) continue;
+                if ([s isKindOfClass:UILabel.class] || [s isKindOfClass:UIImageView.class]) u = CGRectUnion(u, [s convertRect:s.bounds toView:v]);
+                [nx addObject:s];
+            }
+        q = nx;
+    }
+    return CGRectIntersection(u, CGRectInset(v.bounds, -24, -24));     // tràn tối đa 24 pt mỗi phía
+}
+
+// Chụp vùng `rv` (toạ độ của v) của cây layer v, kể cả phần tràn ngoài bounds, không dính hàng xóm.
+static UIImage *LGImageOfRect(UIView *v, CGRect rv, CGFloat scale) {
+    CGSize sz = rv.size;
+    if (sz.width < 1 || sz.height < 1 || sz.width > 2000 || sz.height > 2000) return nil;
+    UIGraphicsImageRendererFormat *fm = [UIGraphicsImageRendererFormat preferredFormat];
+    fm.opaque = NO;
+    fm.scale = scale;
+    UIGraphicsImageRenderer *r = [[UIGraphicsImageRenderer alloc] initWithSize:sz format:fm];
+    return [r imageWithActions:^(UIGraphicsImageRendererContext *c) {
+        CGContextTranslateCTM(c.CGContext, -rv.origin.x, -rv.origin.y);
+        [v.layer renderInContext:c.CGContext];
+    }];
 }
 
 // Các "hàng" của menu: tổ tiên gần nhất của mỗi UILabel mà rộng >= 85% thân và cao <= 75% thân.
@@ -478,12 +509,13 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
     for (LGRow *r in self.rows) [r.holder removeFromSuperlayer];
     [self.rows removeAllObjects];
     for (UIView *v in LGRowViews(body, content)) {
-        UIImage *img = LGImageOf(v, scale);
+        CGRect rv = LGRowVisual(v);
+        UIImage *img = LGImageOfRect(v, rv, scale);
         if (!img.CGImage) continue;
         double ink = LGInk(img);
         if (ink < 0.0005) LGLog(@"  ẢNH HÀNG TRỐNG (%s %@)", object_getClassName(v), NSStringFromCGSize(v.bounds.size));
         LGRow *row = [LGRow new];
-        row.rect = CGRectOffset(LGWinRect(v), off.x, off.y);
+        row.rect = CGRectOffset([v convertRect:rv toView:nil], off.x, off.y);
         CALayer *h = [CALayer layer];
         h.bounds = CGRectMake(0, 0, row.rect.size.width, row.rect.size.height);
         h.hidden = YES;
