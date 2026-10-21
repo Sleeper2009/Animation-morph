@@ -13,7 +13,7 @@ LGParams LGP = { .omega = 29.0, .offsetDelay = 0.124, .contentDelay = 0.048,
                  .blend = 24.0, .dur = 0.5, .closeDur = 0.38, .speed = 1.0,
                  .tint = 0.12, .shadow = 0.18, .rim = 0.14, .material = -1,
                  .bounceAmp = 10.0, .bounceOmega = 22.0, .bounceZeta = 0.4, .bounce = YES, .ring = YES, .ringAll = NO,
-                 .pressScale = 1.30, .pressOmega = 34.0, .pressZeta = 0.55, .pressFlash = 1.0, .pressHold = 0.12, .press = YES,
+                 .pressScale = 1.30, .pressOmega = 34.0, .pressZeta = 0.55, .pressFlash = 1.0, .pressHold = 0.12, .press = YES, .ringMargin = 8.0, .ringPadX = 12.0,
                  .useGlass = YES, .debug = YES, .coverButton = YES, .hideSource = YES, .groupButtons = YES,
                  .blurText = YES, .closeAnim = YES, .dump = YES };
 
@@ -40,6 +40,8 @@ void LGParamsFinalize(void) {
     LGP.pressZeta = fmin(fmax(LGP.pressZeta, 0.1), 1.0);
     LGP.pressFlash = fmin(fmax(LGP.pressFlash, 0.0), 2.0);
     LGP.pressHold = fmin(fmax(LGP.pressHold, 0.0), 0.6);
+    LGP.ringMargin = fmin(fmax(LGP.ringMargin, 0.0), 40.0);
+    LGP.ringPadX = fmin(fmax(LGP.ringPadX, 0.0), 30.0);
     if (LGP.material < -1) LGP.material = -1;
     if (LGP.material > 4) LGP.material = 4;
     // spring 1 - (1+x)e^-x còn ~0.3% ở x = 8  ->  thời gian ổn định = delay + 8/omega
@@ -288,7 +290,7 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
     NSMutableArray<UIView *> *srcs = [NSMutableArray new];
     for (UIView *v in sources) {
         if (!v.window) continue;
-        CGRect r = LGWinRect(v);
+        CGRect r = LGSrcRect(v);     // khung NHÌN THẤY (căn theo icon/chữ + đệm + cách lề) — trùng với vòng cố định
         if (CGRectIsEmpty(r) || r.size.width > 200 || r.size.height > 100) continue;
         src = CGRectUnion(src, r);
         [srcs addObject:v];
