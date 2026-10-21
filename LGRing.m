@@ -163,8 +163,13 @@ static void LGCollect(UIView *v, int depth, CGRect *u, BOOL *text) {
 // Nút thanh điều hướng thường lồng nhau (_UIButtonBarButton > nút trong): tìm nội dung từ lớp NGOÀI CÙNG còn là nút nhỏ.
 static UIView *LGSrcRoot(UIView *v) {
     UIView *root = v;
-    while (root.superview && LGButtonLike(root.superview) &&
-           root.superview.bounds.size.width < 120 && root.superview.bounds.size.height < 80) root = root.superview;
+    while (root.superview && LGButtonLike(root.superview)) {
+        CGSize a = root.bounds.size, b = root.superview.bounds.size;
+        // chỉ leo khi lớp ngoài gần bằng lớp trong (vỏ của CÙNG một nút). Vỏ rộng hơn hẳn là vỏ chứa NHIỀU nút (vd Chia sẻ + "…"):
+        // leo vào đó thì nội dung của cả hai gộp lại và vòng phình thành hình tròn to.
+        if (b.width > a.width + 16 || b.height > a.height + 16 || b.width >= 120 || b.height >= 80) break;
+        root = root.superview;
+    }
     return root;
 }
 
@@ -223,11 +228,22 @@ CGRect LGSrcRect(UIView *v) {
         }
         r = CGRectUnion(r, CGRectInset(c, -4, 0));
     } else {
-        // nút icon: hình tròn tâm đúng giữa icon; sát lề thì thu nhỏ đường kính (giữ nguyên tâm), nhưng không nhỏ hơn icon + 8 pt
-        double D = fmax(H, fmax(c.size.width, c.size.height) + 12);
-        if (Wd > 0) D = fmin(D, 2 * fmin(CGRectGetMidX(c) - m, Wd - m - CGRectGetMidX(c)));
-        D = fmax(D, fmax(c.size.width, c.size.height) + 8);
-        r = CGRectMake(CGRectGetMidX(c) - D / 2, CGRectGetMidY(c) - D / 2, D, D);
+        // nút icon: hình tròn tâm đúng giữa icon (nội dung rộng thì viên thuốc, KHÔNG phình thành hình tròn to);
+        // sát lề thì thu nhỏ đường kính (giữ nguyên tâm), nhưng không nhỏ hơn icon + 8 pt
+        double cw = c.size.width, ch = c.size.height;
+        double Hh = fmin(fmax(H, ch + 8), 56), W = fmax(Hh, cw + 12);
+        if (W <= Hh + 0.5) {
+            double D = Hh;
+            if (Wd > 0) D = fmin(D, 2 * fmin(CGRectGetMidX(c) - m, Wd - m - CGRectGetMidX(c)));
+            D = fmax(D, fmax(cw, ch) + 8);
+            W = Hh = D;
+        }
+        r = CGRectMake(CGRectGetMidX(c) - W / 2, CGRectGetMidY(c) - Hh / 2, W, Hh);
+        if (W > Hh + 0.5 && Wd > 0) {
+            if (r.origin.x < m) { double d = m - r.origin.x; r.origin.x += d; r.size.width -= d; }
+            if (CGRectGetMaxX(r) > Wd - m) r.size.width = Wd - m - r.origin.x;
+            r = CGRectUnion(r, CGRectInset(c, -4, 0));
+        }
     }
     return r;
 }
@@ -312,6 +328,13 @@ static void LGRingRefresh(UIView *v, int attempt, BOOL quiet) {
 
     UIView *parent = group.count <= 1 ? owner.superview : (LGCommonAncestor(group) ?: owner.superview);
     if (!parent) return;
+    // view cha cắt nội dung (clipsToBounds) mà vòng tràn ra ngoài thì vòng bị cắt mất -> leo lên view cha ngoài (tối đa 3 bậc)
+    for (int i = 0; i < 3 && parent.superview; i++) {
+        CGRect t = [parent convertRect:u fromView:nil];
+        BOOL clipped = (parent.clipsToBounds || parent.layer.masksToBounds) && !CGRectContainsRect(CGRectInset(parent.bounds, -0.5, -0.5), t);
+        if (!clipped) break;
+        parent = parent.superview;
+    }
     LGRingView *ring = LGRingOf(owner);
     BOOL fresh = NO;
     if (!ring) {
@@ -492,7 +515,9 @@ static LGPress *gPress;
     CFTimeInterval now = CACurrentMediaTime();
     if (!_released) {
         double t = now - _t0;
-        [self apply:lgtl_press_scale(t, LGP.pressScale, LGP.pressOmega, LGP.pressZeta) flash:lgtl_press_flash(t, 0.03)];
+        double s = LGP.pressZoomOn ? lgtl_press_scale(t, LGP.pressScale, LGP.pressOmega, LGP.pressZeta) : 1;
+        double fl = LGP.pressFlashOn ? lgtl_press_flash(t, 0.03) : 0;
+        [self apply:s flash:fl];
         if (t > 3.0) [self release_];     // chốt an toàn: giữ quá lâu thì tự thu về
     } else {
         double t = now - _tRel, w = 30.0;
