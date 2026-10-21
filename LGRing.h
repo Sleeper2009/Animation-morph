@@ -9,6 +9,21 @@
 NSArray<UIView *> *LGGroupFor(UIView *src);
 BOOL LGButtonLike(UIView *v);
 
+/// Cửa sổ phủ dùng chung cho hiệu ứng ấn và morph: UIWindow riêng, hoặc (trong extension / remote view service, nơi cửa sổ riêng không hiển thị)
+/// một view phủ kín trong cửa sổ `win`. LGOverlayShow bỏ ẩn + đưa lên trên cùng; LGOverlayDrop ẩn và gỡ.
+UIView *LGMakeOverlay(UIWindow *win);
+void LGOverlayShow(UIView *ov);
+void LGOverlayDrop(UIView *ov);
+
+/// View có UIContextMenuInteraction / UIButton.menu không (= nút sinh ra menu).
+BOOL LGHasMenuInteraction(UIView *v);
+/// View (hoặc tổ tiên gần) là nút "quay lại" của thanh điều hướng.
+BOOL LGIsBackButton(UIView *v);
+/// Ứng viên cho hiệu ứng ấn (như LGRingIsCandidate nhưng không phụ thuộc công tắc ringBack).
+BOOL LGPressIsCandidate(UIView *v);
+/// Quét lại mọi cửa sổ để dựng / gỡ vòng ngay (khi đổi công tắc trong Cài đặt). enabled = NO: gỡ hết.
+void LGRingRescanAll(BOOL enabled);
+
 /// Khung NHÌN THẤY của nút trong toạ độ cửa sổ: căn theo vùng nội dung (icon/chữ) chứ không theo khung kỹ thuật của nút,
 /// nút chữ -> viên thuốc (chữ + đệm hai bên), nút icon -> hình tròn; cách mép cửa sổ ít nhất `ringMargin`. Dùng chung cho vòng, hiệu ứng ấn và morph.
 CGRect LGSrcRect(UIView *v);
