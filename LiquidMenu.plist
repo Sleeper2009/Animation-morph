@@ -2,15 +2,18 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>Filter</key>
+	<key>entry</key>
 	<dict>
-		<!-- Toàn hệ thống: mọi app dùng UIKit. SpringBoard mặc định bị tắt trong Tweak.x (plist key springboard = true để bật).
-		     Muốn quay lại thử riêng Ghi chú, thay bằng:
-		     <key>Executables</key><array><string>MobileNotes</string></array> -->
-		<key>Bundles</key>
-		<array>
-			<string>com.apple.UIKit</string>
-		</array>
+		<key>bundle</key>
+		<string>LiquidMenuPrefs</string>
+		<key>cell</key>
+		<string>PSLinkCell</string>
+		<key>detail</key>
+		<string>LMRootListController</string>
+		<key>isController</key>
+		<true/>
+		<key>label</key>
+		<string>LiquidMenu</string>
 	</dict>
 </dict>
 </plist>
