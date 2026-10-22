@@ -15,7 +15,8 @@ typedef struct {
     double radOmega, radDelay;                 // bo góc: viên thuốc -> bo cuối
     double blend;                              // độ dính metaball (pt)
     double dur;                                // tổng timeline (s)
-    int style;                                 // 0 = morph metaball (bản Flutter), 1 = giọt lỏng (đo từ video iOS 26)
+    int style;                                 // 0 = morph metaball (bản Flutter), 1 = Liquid (đo từ video iOS 26)
+    double drop;                               // Liquid: độ "rơi" xuống (tỉ lệ chiều cao menu), 0 = không rơi
 } LGTimeSpec;
 
 typedef struct {
@@ -85,10 +86,11 @@ static inline double lgtl_step(double t, double w, double zeta) {
 // Xung tới hạn chuẩn hoá: 0 -> đỉnh 1 tại t = 1/w -> tắt dần về 0 (không dao động ngược).
 static inline double lgtl_kick(double t, double w) { return t <= 0 ? 0 : (w * t) * exp(1 - w * t); }
 
-// ---- Kiểu 2: "giọt lỏng" (đo từ video iOS 26, 24 fps; khớp mép trên/dưới của menu sai số <= 4 px trên 8 khung) ----
+// ---- Kiểu 2: "Liquid" (đo từ video iOS 26, 24 fps; khớp mép trên/dưới của menu sai số <= 9 px trên 8 khung) ----
 //   * khối menu xuất phát từ NÚT dưới dạng giọt rất nhỏ rồi lao tới đúng vị trí cuối trong ~50 ms (không bay chậm từ góc như kiểu 1)
 //   * chiều cao: lò xo gần tới hạn (ω = 28, ζ = 0,9) từ 20% -> 100%; chiều rộng nở nhanh hơn (ω = 55) từ 5% -> 100%
-//   * "rơi": sau ~75 ms khối bị đẩy xuống thêm ~20% chiều cao rồi trượt về (xung tới hạn ω = 26, không dao động ngược)
+//   * "rơi": sau ~75 ms khối bị đẩy xuống thêm một đoạn rồi trượt về (xung tới hạn ω = 26, không dao động ngược).
+//     Video đo được 20,5% chiều cao nhưng nhìn trên máy bị giật mạnh nên mặc định chỉ 6% (sp->drop, chỉnh bằng khoá liquidDrop)
 //   * chữ mờ mạnh (blur) trong ~30 ms đầu, nét dần tới ~220 ms; bo góc tròn dần về bo cuối
 //   * đóng = xem ngược timeline này (khớp video: lúc đóng khối cũng tụt xuống rồi co về nút thành giọt)
 #define LGLIQ_H0 0.20
@@ -99,7 +101,6 @@ static inline double lgtl_kick(double t, double w) { return t <= 0 ? 0 : (w * t)
 #define LGLIQ_WZ 0.90
 #define LGLIQ_MOVE_DELAY 0.008
 #define LGLIQ_MOVE_W 100.0
-#define LGLIQ_DROP 0.205
 #define LGLIQ_DROP_DELAY 0.075
 #define LGLIQ_DROP_W 26.0
 
@@ -113,7 +114,7 @@ static inline LGTimeFrame LGTimelineLiquid(const LGTimeSpec *sp, const LGTimeGeo
     double pm = lgtl_sp(t - LGLIQ_MOVE_DELAY, LGLIQ_MOVE_W);                                  // lao từ nút tới vị trí cuối
     double dir = g->ay >= 0.5 ? -1.0 : 1.0;                                                   // rơi theo hướng menu mở ra
     double cx = lgtl_lerp(bcx, fcx, pm);
-    double cy = lgtl_lerp(bcy, fcy, pm) + dir * LGLIQ_DROP * g->H * lgtl_kick(t - LGLIQ_DROP_DELAY, LGLIQ_DROP_W);
+    double cy = lgtl_lerp(bcy, fcy, pm) + dir * sp->drop * g->H * lgtl_kick(t - LGLIQ_DROP_DELAY, LGLIQ_DROP_W);
     // lúc tau -> 0 (cuối animation đóng) khối co hẳn về 0 để chỉ còn lại nút
     double vis = lgtl_clamp(t / 0.03, 0, 1);
     double w = g->W * wf * vis, h = g->H * hf * vis;
