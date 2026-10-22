@@ -12,6 +12,13 @@ extern char **environ;
     return _specifiers;
 }
 
+// Nút Respring nằm trên thanh tiêu đề, cạnh chữ "LiquidMenu".
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:@"Respring" style:UIBarButtonItemStylePlain
+                                                                             target:self action:@selector(respring)];
+}
+
 // Respring: ưu tiên sbreload, không có thì killall SpringBoard (đường dẫn rootless /var/jb tự thêm qua ROOT_PATH).
 - (void)respring {
     const char *sbreload[] = { ROOT_PATH("/usr/bin/sbreload"), "/usr/bin/sbreload", NULL };
