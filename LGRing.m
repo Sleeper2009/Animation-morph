@@ -5,6 +5,7 @@
 #include "LGTimeline.h"
 
 static const void *kRingKey = &kRingKey;
+static const void *kBBoxKey = &kBBoxKey;     // bộ nhớ đệm bbox điểm ảnh của nút tự vẽ nội dung
 
 // ------------------------------------------------------------------ view vòng
 @interface LGRingView : UIView
@@ -182,6 +183,16 @@ static BOOL LGContentRect(UIView *v, CGRect *out, BOOL *text) {
     if (v.hidden || v.alpha < 0.05) return NO;
     CGSize sz = v.bounds.size;
     if (sz.width < 4 || sz.height < 4 || sz.width > 200 || sz.height > 100) return NO;
+    // đo điểm ảnh khá tốn: nhớ kết quả (theo kích thước nút) 5 giây, bộ đếm giờ 10 Hz của vòng chỉ dùng lại kết quả
+    NSDictionary *cache = objc_getAssociatedObject(v, kBBoxKey);
+    NSString *szKey = NSStringFromCGSize(sz);
+    if (cache && [cache[@"s"] isEqualToString:szKey] && CACurrentMediaTime() - [cache[@"t"] doubleValue] < 5.0) {
+        NSValue *rv = cache[@"r"];
+        if (!rv) return NO;
+        *out = [v convertRect:rv.CGRectValue toView:nil];
+        *text = out->size.width > out->size.height * 1.8;
+        return YES;
+    }
     const int S = 2;
     size_t w = (size_t)ceil(sz.width * S), h = (size_t)ceil(sz.height * S);
     uint8_t *buf = calloc(w * h, 1);
@@ -202,8 +213,12 @@ static BOOL LGContentRect(UIView *v, CGRect *out, BOOL *text) {
             }
     CGContextRelease(g);
     free(buf);
-    if (x1 < x0 || y1 < y0) return NO;
+    if (x1 < x0 || y1 < y0) {
+        objc_setAssociatedObject(v, kBBoxKey, @{ @"s": szKey, @"t": @(CACurrentMediaTime()) }, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        return NO;
+    }
     CGRect pr = CGRectMake(x0 / (CGFloat)S, y0 / (CGFloat)S, (x1 - x0 + 1) / (CGFloat)S, (y1 - y0 + 1) / (CGFloat)S);
+    objc_setAssociatedObject(v, kBBoxKey, @{ @"s": szKey, @"t": @(CACurrentMediaTime()), @"r": [NSValue valueWithCGRect:pr] }, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     *out = [v convertRect:pr toView:nil];
     *text = out->size.width > out->size.height * 1.8;     // không biết có chữ hay không: nội dung dẹt -> coi như chữ
     return YES;
@@ -400,13 +415,17 @@ BOOL LGRingHide(NSArray<UIView *> *views, BOOL hide) {
 }
 
 // ------------------------------------------------------------------ hiệu ứng ẤN (lóe sáng + phóng to)
+// Tối ưu để không lag lúc chạm xuống (phần này chạy TRƯỚC khi hệ thống xử lý chạm):
+//   - không chụp ảnh bằng afterScreenUpdates:YES (ép màn hình cập nhật đồng bộ, rất chậm): vòng cố định nay là view anh em nên ảnh chụp nút vốn đã sạch;
+//   - viên kính dùng lớp màu đặc thay vì UIVisualEffectView (blur phải vẽ lại mỗi khung hình khi phóng to) và được rasterize;
+//   - animation là CAKeyframeAnimation (lấy mẫu từ công thức lò xo) chạy trên render server, không còn CADisplayLink + CATransaction mỗi khung hình;
+//   - cửa sổ phủ được dùng lại giữa các lần ấn.
 @interface LGPress : NSObject
 @property (nonatomic, strong) UIView *ow;
 @property (nonatomic, strong) UIView *holder, *flash;
-@property (nonatomic, strong) CALayer *glow;
+@property (nonatomic, strong) CALayer *glow, *base;
 @property (nonatomic, strong) NSArray<UIView *> *sources;
 @property (nonatomic, strong) NSMutableArray<NSNumber *> *alphas;
-@property (nonatomic, strong) CADisplayLink *link;
 @property (nonatomic, readonly) CFTimeInterval t0;
 @property (nonatomic, readonly) BOOL released;
 + (void)beginWithSources:(NSArray<UIView *> *)sources;
@@ -416,11 +435,12 @@ BOOL LGRingHide(NSArray<UIView *> *views, BOOL hide) {
 @end
 
 static LGPress *gPress;
+static UIView *gPressHost;          // cửa sổ phủ dùng lại (nếu là UIWindow)
+static __weak UIWindow *gPressHostWin;
 
 @implementation LGPress {
-    CFTimeInterval _t0, _tRel;
+    CFTimeInterval _t0;
     BOOL _released, _restored;
-    double _sCur, _fCur, _sRel, _fRel;
 }
 - (CFTimeInterval)t0 { return _t0; }
 - (BOOL)released { return _released; }
@@ -442,20 +462,36 @@ static LGPress *gPress;
     LGPress *p = [LGPress new];
     p.sources = srcs;
 
-    UIView *ow = LGMakeOverlay(win);
+    UIView *ow;
+    BOOL reusable = ![NSBundle.mainBundle.bundlePath.pathExtension isEqualToString:@"appex"] && LGP.overlayMode != 2;
+    if (reusable && gPressHost && gPressHostWin == win) {
+        ow = gPressHost;
+    } else {
+        ow = LGMakeOverlay(win);
+        if (reusable && [ow isKindOfClass:UIWindow.class]) { gPressHost = ow; gPressHostWin = win; }
+    }
     p.ow = ow;
 
-    // viên kính = đúng hình vòng cố định (cùng khung, cùng bo góc min(rộng, cao)/2)
+    double rad = fmin(u.size.width, u.size.height) / 2;
     UIView *holder = [[UIView alloc] initWithFrame:u];
     holder.userInteractionEnabled = NO;
+    holder.layer.shouldRasterize = YES;
+    holder.layer.rasterizationScale = UIScreen.mainScreen.scale;
     [ow addSubview:holder];
     p.holder = holder;
-    LGRingView *disc = [[LGRingView alloc] initWithFrame:holder.bounds];
-    [holder addSubview:disc];
-    double rad = fmin(u.size.width, u.size.height) / 2;
+
+    // nền viên kính: màu đặc gần giống vòng cố định (kính + màu phủ) nhưng không blur
+    BOOL dark = win.traitCollection.userInterfaceStyle == UIUserInterfaceStyleDark;
+    CALayer *base = [CALayer layer];
+    base.frame = holder.bounds;
+    base.cornerRadius = rad;
+    base.backgroundColor = (dark ? [UIColor colorWithWhite:0.12 alpha:0.96] : [UIColor colorWithWhite:0.93 alpha:0.96]).CGColor;
+    base.borderWidth = 0.8;
+    base.borderColor = (dark ? [UIColor colorWithWhite:1 alpha:0.14] : [UIColor colorWithWhite:0 alpha:0.14]).CGColor;
+    [holder.layer addSublayer:base];
+    p.base = base;
 
     // tối: lóe trắng (như video); sáng: lóe tối (trắng trên nền sáng không nhìn thấy)
-    BOOL dark = win.traitCollection.userInterfaceStyle == UIUserInterfaceStyleDark;
     double F = LGP.pressFlash;
     UIView *fl = [[UIView alloc] initWithFrame:holder.bounds];
     fl.userInteractionEnabled = NO;
@@ -474,15 +510,15 @@ static LGPress *gPress;
     [holder.layer addSublayer:glow];
     p.glow = glow;
 
-    // ẩn vòng cố định TRƯỚC khi chụp icon (để ảnh chụp không dính vòng), rồi mới ẩn nút thật
-    BOOL hadRing = LGRingHide(srcs, YES);
+    // ảnh icon nút: chụp KHÔNG chờ cập nhật màn hình (vòng nay là view anh em nên ảnh vốn đã sạch), rồi mới ẩn nút thật + vòng
     for (UIView *v in srcs) {
-        UIView *s = [v snapshotViewAfterScreenUpdates:hadRing];
+        UIView *s = [v snapshotViewAfterScreenUpdates:NO];
         if (!s) continue;
         CGRect r = [v convertRect:v.bounds toView:nil];
         s.frame = CGRectOffset(r, -u.origin.x, -u.origin.y);
         [holder addSubview:s];
     }
+    LGRingHide(srcs, YES);
     p.alphas = [NSMutableArray new];
     for (UIView *v in srcs) {
         [p.alphas addObject:@(v.alpha < 0.05 ? 1.0 : v.alpha)];
@@ -490,50 +526,79 @@ static LGPress *gPress;
     }
 
     p->_t0 = CACurrentMediaTime();
-    p->_sCur = 1;
-    p->_fCur = 0;
     gPress = p;
     LGOverlayShow(ow);
-    p.link = [CADisplayLink displayLinkWithTarget:p selector:@selector(tick:)];
-    [p.link addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
+    [p animateIn];
+    // chốt an toàn: giữ quá lâu thì tự thu về
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{ if (gPress == p) [p release_]; });
     LGLog(@"ẤN: %lu nút, khung %@ bo=%.1f %@", (unsigned long)srcs.count, NSStringFromCGRect(u), rad, dark ? @"(tối: lóe trắng)" : @"(sáng: lóe tối)");
 }
 
-- (void)apply:(double)s flash:(double)f {
-    _sCur = s;
-    _fCur = f;
-    [CATransaction begin];
-    [CATransaction setDisableActions:YES];
-    self.holder.transform = CGAffineTransformMakeScale((CGFloat)s, (CGFloat)s);
-    self.flash.alpha = (CGFloat)f;
-    self.glow.opacity = (float)f;
-    [CATransaction commit];
+// Lấy mẫu công thức lò xo thành keyframe chạy trên render server. Tốc độ animation (LGP.speed) co giãn thời gian.
+static CAKeyframeAnimation *LGKeys(NSString *path, NSArray *values, double dur) {
+    CAKeyframeAnimation *a = [CAKeyframeAnimation animationWithKeyPath:path];
+    a.values = values;
+    a.duration = dur;
+    a.calculationMode = kCAAnimationLinear;
+    a.removedOnCompletion = YES;
+    return a;
 }
 
-- (void)tick:(CADisplayLink *)l {
-    if (self != gPress) { [l invalidate]; return; }
-    CFTimeInterval now = CACurrentMediaTime();
-    if (!_released) {
-        double t = now - _t0;
-        double s = LGP.pressZoomOn ? lgtl_press_scale(t, LGP.pressScale, LGP.pressOmega, LGP.pressZeta) : 1;
-        double fl = LGP.pressFlashOn ? lgtl_press_flash(t, 0.03) : 0;
-        [self apply:s flash:fl];
-        if (t > 3.0) [self release_];     // chốt an toàn: giữ quá lâu thì tự thu về
-    } else {
-        double t = now - _tRel, w = 30.0;
-        double s = 1 + (_sRel - 1) * (1 + w * t) * exp(-w * t);     // lò xo tới hạn, vận tốc đầu 0
-        double f = _fRel * exp(-t / 0.05);
-        if (t > 0.35 || (fabs(s - 1) < 0.003 && f < 0.01)) { [self end]; return; }
-        [self apply:s flash:f];
+- (void)animateIn {
+    double sp = fmax(LGP.speed, 0.25);
+    const int N = 24;
+    double span = 0.32;                          // giây (chưa co giãn) đủ để lò xo lắng
+    NSMutableArray *sv = [NSMutableArray new], *fv = [NSMutableArray new];
+    double sEnd = 1, fEnd = 0;
+    for (int i = 0; i <= N; i++) {
+        double t = span * i / N;
+        sEnd = LGP.pressZoomOn ? lgtl_press_scale(t, LGP.pressScale, LGP.pressOmega, LGP.pressZeta) : 1;
+        fEnd = LGP.pressFlashOn ? lgtl_press_flash(t, 0.03) : 0;
+        [sv addObject:@(sEnd)];
+        [fv addObject:@(fEnd)];
     }
+    double D = span / sp;
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    self.holder.layer.transform = CATransform3DMakeScale((CGFloat)sEnd, (CGFloat)sEnd, 1);    // giá trị cuối; animation đè lên trong lúc chạy
+    self.flash.layer.opacity = (float)fEnd;
+    self.glow.opacity = (float)fEnd;
+    [CATransaction commit];
+    [self.holder.layer addAnimation:LGKeys(@"transform.scale", sv, D) forKey:@"in"];
+    [self.flash.layer addAnimation:LGKeys(@"opacity", fv, D) forKey:@"in"];
+    [self.glow addAnimation:LGKeys(@"opacity", fv, D) forKey:@"in"];
 }
 
 - (void)release_ {
     if (_released) return;
     _released = YES;
-    _tRel = CACurrentMediaTime();
-    _sRel = _sCur;
-    _fRel = _fCur;
+    CALayer *hp = self.holder.layer.presentationLayer ?: self.holder.layer;
+    double s0 = [[hp valueForKeyPath:@"transform.scale"] doubleValue];
+    double f0 = (self.flash.layer.presentationLayer ?: self.flash.layer).opacity;
+    double sp = fmax(LGP.speed, 0.25);
+    const int N = 16;
+    double span = 0.20;
+    NSMutableArray *sv = [NSMutableArray new], *fv = [NSMutableArray new];
+    for (int i = 0; i <= N; i++) {
+        double t = span * i / N, w = 30.0;
+        [sv addObject:@(1 + (s0 - 1) * (1 + w * t) * exp(-w * t))];     // lò xo tới hạn, vận tốc đầu 0
+        [fv addObject:@(f0 * exp(-t / 0.05))];
+    }
+    double D = span / sp;
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    [self.holder.layer removeAllAnimations];
+    [self.flash.layer removeAllAnimations];
+    [self.glow removeAllAnimations];
+    self.holder.layer.transform = CATransform3DIdentity;
+    self.flash.layer.opacity = 0;
+    self.glow.opacity = 0;
+    [CATransaction commit];
+    [self.holder.layer addAnimation:LGKeys(@"transform.scale", sv, D) forKey:@"out"];
+    [self.flash.layer addAnimation:LGKeys(@"opacity", fv, D) forKey:@"out"];
+    [self.glow addAnimation:LGKeys(@"opacity", fv, D) forKey:@"out"];
+    LGPress *me = self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)((D + 0.03) * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ if (gPress == me) [me end]; });
 }
 
 // Trả nút thật + vòng về nguyên trạng (một lần duy nhất: morph có thể đã ẩn chúng lại ngay sau đó, không được trả lần nữa).
@@ -545,10 +610,12 @@ static LGPress *gPress;
 }
 
 - (void)end {
-    [self.link invalidate];
-    self.link = nil;
     [self restoreSources];
-    LGOverlayDrop(self.ow);
+    BOOL window = [self.ow isKindOfClass:UIWindow.class];
+    [self.holder removeFromSuperview];
+    if (window && self.ow == gPressHost) self.ow.hidden = YES;     // cửa sổ được dùng lại: chỉ ẩn, không gỡ
+    else LGOverlayDrop(self.ow);
+    self.holder = nil;
     self.ow = nil;
     if (gPress == self) gPress = nil;
 }
