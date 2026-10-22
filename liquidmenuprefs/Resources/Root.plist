@@ -7,8 +7,6 @@
 		<dict>
 			<key>cell</key>
 			<string>PSGroupCell</string>
-			<key>footerText</key>
-			<string>Đổi công tắc có hiệu lực ngay.</string>
 			<key>label</key>
 			<string>LiquidMenu</string>
 		</dict>
@@ -29,8 +27,6 @@
 		<dict>
 			<key>cell</key>
 			<string>PSGroupCell</string>
-			<key>footerText</key>
-			<string>Morph: menu bay ra từ nút. Giọt lỏng: menu bung ra như iOS 26.</string>
 			<key>label</key>
 			<string>Kiểu animation</string>
 		</dict>
@@ -52,18 +48,42 @@
 			<key>shortTitles</key>
 			<array>
 				<string>Morph</string>
-				<string>Giọt lỏng</string>
+				<string>Liquid</string>
 			</array>
 			<key>validTitles</key>
 			<array>
 				<string>Morph</string>
-				<string>Giọt lỏng</string>
+				<string>Liquid</string>
 			</array>
 			<key>validValues</key>
 			<array>
 				<integer>0</integer>
 				<integer>1</integer>
 			</array>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
+			<string>Tốc độ animation</string>
+		</dict>
+		<dict>
+			<key>PostNotification</key>
+			<string>com.fujb-2009.liquidmenu/reload</string>
+			<key>cell</key>
+			<string>PSSliderCell</string>
+			<key>default</key>
+			<real>1.0</real>
+			<key>defaults</key>
+			<string>com.fujb-2009.liquidmenu</string>
+			<key>key</key>
+			<string>speed</string>
+			<key>max</key>
+			<real>2.0</real>
+			<key>min</key>
+			<real>0.5</real>
+			<key>showValue</key>
+			<true/>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -196,20 +216,6 @@
 			<true/>
 			<key>label</key>
 			<string>Loại trừ ứng dụng</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSGroupCell</string>
-			<key>label</key>
-			<string>Hệ thống</string>
-		</dict>
-		<dict>
-			<key>action</key>
-			<string>respring</string>
-			<key>cell</key>
-			<string>PSButtonCell</string>
-			<key>label</key>
-			<string>Respring</string>
 		</dict>
 	</array>
 	<key>title</key>
