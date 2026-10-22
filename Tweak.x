@@ -334,7 +334,7 @@ static void LGApplyPrefs(NSDictionary *p) {
     LGNUM(@"tint", tint) LGNUM(@"shadow", shadow) LGNUM(@"rim", rim)
     LGNUM(@"pressScale", pressScale) LGNUM(@"pressOmega", pressOmega) LGNUM(@"pressZeta", pressZeta)
     LGNUM(@"pressFlash", pressFlash) LGNUM(@"pressHold", pressHold)
-    LGNUM(@"ringMargin", ringMargin) LGNUM(@"ringPadX", ringPadX) LGNUM(@"groupGap", groupGap)
+    LGNUM(@"ringMargin", ringMargin) LGNUM(@"ringPadX", ringPadX) LGNUM(@"groupGap", groupGap) LGNUM(@"liquidDrop", liquidDrop)
     LGNUM(@"bounceAmp", bounceAmp) LGNUM(@"bounceOmega", bounceOmega) LGNUM(@"bounceZeta", bounceZeta)
     if ([p[@"material"] respondsToSelector:@selector(intValue)]) LGP.material = [p[@"material"] intValue];
     if ([p[@"overlayMode"] respondsToSelector:@selector(intValue)]) LGP.overlayMode = [p[@"overlayMode"] intValue];
