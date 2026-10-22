@@ -13,7 +13,7 @@ LGParams LGP = { .omega = 29.0, .offsetDelay = 0.124, .contentDelay = 0.048,
                  .blend = 24.0, .dur = 0.5, .closeDur = 0.38, .speed = 1.0,
                  .tint = 0.12, .shadow = 0.18, .rim = 0.14, .material = -1,
                  .bounceAmp = 10.0, .bounceOmega = 22.0, .bounceZeta = 0.4, .bounce = YES, .ring = YES, .ringAll = NO,
-                 .pressScale = 1.30, .pressOmega = 34.0, .pressZeta = 0.55, .pressFlash = 1.0, .pressHold = 0.12, .press = YES, .pressFlashOn = YES, .pressZoomOn = YES, .ringMargin = 8.0, .ringPadX = 12.0, .ringBack = YES, .fallbackAnim = YES, .groupGap = 16.0, .overlayMode = 0,
+                 .pressScale = 1.30, .pressOmega = 34.0, .pressZeta = 0.55, .pressFlash = 1.0, .pressHold = 0.12, .press = YES, .pressFlashOn = YES, .pressZoomOn = YES, .ringMargin = 8.0, .ringPadX = 12.0, .ringBack = YES, .fallbackAnim = YES, .groupGap = 16.0, .overlayMode = 0, .style = 0,
                  .useGlass = YES, .debug = YES, .coverButton = YES, .hideSource = YES, .groupButtons = YES,
                  .blurText = YES, .closeAnim = YES, .dump = YES };
 
@@ -44,6 +44,7 @@ void LGParamsFinalize(void) {
     LGP.ringPadX = fmin(fmax(LGP.ringPadX, 0.0), 30.0);
     LGP.groupGap = fmin(fmax(LGP.groupGap, 0.0), 60.0);
     if (LGP.overlayMode < 0 || LGP.overlayMode > 2) LGP.overlayMode = 0;
+    if (LGP.style < 0 || LGP.style > 1) LGP.style = 0;
     if (LGP.material < -1) LGP.material = -1;
     if (LGP.material > 4) LGP.material = 4;
     // spring 1 - (1+x)e^-x còn ~0.3% ở x = 8  ->  thời gian ổn định = delay + 8/omega
@@ -352,7 +353,8 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
     _F = CGRectOffset(F0, pl.dx, pl.dy);
 
     _spec = (LGTimeSpec){ LGP.omega, LGP.offsetDelay, LGP.contentDelay, LGP.dotOmega, LGP.dotDelay,
-                          LGP.radOmega, LGP.radDelay, LGP.blend, LGP.dur };
+                          LGP.radOmega, LGP.radDelay, LGP.blend, LGP.dur, LGP.style };
+    if (LGP.style == 1) _spec.dur = 0.36;      // kiểu giọt lỏng lắng xuống nhanh hơn (đo từ video)
     double maxR = fmin(_F.size.width, _F.size.height) / 2;
     _geom = (LGTimeGeom){ _F.size.width, _F.size.height, pl.ax, pl.ay, pl.a0x, pl.a0y, pl.a1x, pl.a1y,
                           LGCornerOf(body, container, maxR), LGBoxOf(src) };
@@ -611,15 +613,15 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
     BOOL show = f.op >= 0.01 && f.body.w >= 90 && f.body.h > 1;
     double pc = fmax(f.pc, 0.001);
     double bcx = f.body.x + f.body.w / 2;
-    double ay = _geom.ay;
+    double ay = f.rowAy;
     double anchorY = f.body.y + ay * f.body.h;
     double fcx = CGRectGetMidX(_F);
     for (LGRow *r in self.rows) {
         r.holder.hidden = !show;
         if (!show) continue;
         // hàng giữ nguyên khoảng cách tới điểm neo của thân, và nằm chính giữa bề rộng thân hiện tại (như bản Flutter)
-        double cx = bcx + (CGRectGetMidX(r.rect) - fcx) - _R.origin.x;
-        double cy = anchorY + (CGRectGetMidY(r.rect) - _geom.a1y) - _R.origin.y;
+        double cx = bcx + (CGRectGetMidX(r.rect) - fcx) * f.rowK - _R.origin.x;
+        double cy = anchorY + (CGRectGetMidY(r.rect) - f.rowA1y) * f.rowK - _R.origin.y;
         r.holder.position = CGPointMake(cx, cy);
         r.holder.transform = CATransform3DMakeScale(pc, pc, 1);
         double all = f.op * (1 - f.full);
