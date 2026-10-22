@@ -13,7 +13,7 @@ LGParams LGP = { .omega = 29.0, .offsetDelay = 0.124, .contentDelay = 0.048,
                  .blend = 24.0, .dur = 0.5, .closeDur = 0.38, .speed = 1.0,
                  .tint = 0.12, .shadow = 0.18, .rim = 0.14, .material = -1,
                  .bounceAmp = 10.0, .bounceOmega = 22.0, .bounceZeta = 0.4, .bounce = YES, .ring = YES, .ringAll = NO,
-                 .pressScale = 1.30, .pressOmega = 34.0, .pressZeta = 0.55, .pressFlash = 1.0, .pressHold = 0.12, .press = YES, .pressFlashOn = YES, .pressZoomOn = YES, .ringMargin = 8.0, .ringPadX = 12.0, .ringBack = YES, .fallbackAnim = YES, .groupGap = 16.0, .overlayMode = 0, .style = 0,
+                 .pressScale = 1.30, .pressOmega = 34.0, .pressZeta = 0.55, .pressFlash = 1.0, .pressHold = 0.12, .press = YES, .pressFlashOn = YES, .pressZoomOn = YES, .ringMargin = 8.0, .ringPadX = 12.0, .ringBack = YES, .fallbackAnim = YES, .groupGap = 16.0, .overlayMode = 0, .style = 0, .liquidDrop = 0.06,
                  .useGlass = YES, .debug = YES, .coverButton = YES, .hideSource = YES, .groupButtons = YES,
                  .blurText = YES, .closeAnim = YES, .dump = YES };
 
@@ -45,6 +45,8 @@ void LGParamsFinalize(void) {
     LGP.groupGap = fmin(fmax(LGP.groupGap, 0.0), 60.0);
     if (LGP.overlayMode < 0 || LGP.overlayMode > 2) LGP.overlayMode = 0;
     if (LGP.style < 0 || LGP.style > 1) LGP.style = 0;
+    LGP.liquidDrop = fmin(fmax(LGP.liquidDrop, 0.0), 0.3);
+    LGP.speed = fmin(fmax(LGP.speed, 0.4), 3.0);
     if (LGP.material < -1) LGP.material = -1;
     if (LGP.material > 4) LGP.material = 4;
     // spring 1 - (1+x)e^-x còn ~0.3% ở x = 8  ->  thời gian ổn định = delay + 8/omega
@@ -353,8 +355,8 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
     _F = CGRectOffset(F0, pl.dx, pl.dy);
 
     _spec = (LGTimeSpec){ LGP.omega, LGP.offsetDelay, LGP.contentDelay, LGP.dotOmega, LGP.dotDelay,
-                          LGP.radOmega, LGP.radDelay, LGP.blend, LGP.dur, LGP.style };
-    if (LGP.style == 1) _spec.dur = 0.36;      // kiểu giọt lỏng lắng xuống nhanh hơn (đo từ video)
+                          LGP.radOmega, LGP.radDelay, LGP.blend, LGP.dur, LGP.style, LGP.liquidDrop };
+    if (LGP.style == 1) _spec.dur = 0.36;      // kiểu Liquid lắng xuống nhanh hơn (đo từ video)
     double maxR = fmin(_F.size.width, _F.size.height) / 2;
     _geom = (LGTimeGeom){ _F.size.width, _F.size.height, pl.ax, pl.ay, pl.a0x, pl.a0y, pl.a1x, pl.a1y,
                           LGCornerOf(body, container, maxR), LGBoxOf(src) };
