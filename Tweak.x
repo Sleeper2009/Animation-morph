@@ -353,6 +353,7 @@ static void LGApplyPrefs(NSDictionary *p) {
     LGP.ringAll = LGBoolOf(p[@"ringAll"], LGP.ringAll);
     LGP.ringBack = LGBoolOf(p[@"ringBack"], LGP.ringBack);
     LGP.fallbackAnim = LGBoolOf(p[@"fallbackAnim"], LGP.fallbackAnim);
+    LGP.glass = LGBoolOf(p[@"glass"], LGP.glass);
     // Log chỉ ghi khi có sự kiện menu. Dump cây view/class (nặng) mặc định chỉ bật ở Ghi chú; app khác muốn dump thì đặt dump = true.
     LGP.dump = LGBoolOf(p[@"dump"], gIsNotes);
     LGP.debug = LGBoolOf(p[@"debug"], LGP.debug);
@@ -360,6 +361,7 @@ static void LGApplyPrefs(NSDictionary *p) {
     LGLogOn = LGP.debug;
     LGLog(@"cài đặt [%@]: bật=%d vòng=%d vòngQuayLại=%d lóe=%d phóng=%d nảy=%d gộp=%d dựPhòng=%d", gBid, gEnabled, LGP.ring, LGP.ringBack,
           LGP.pressFlashOn, LGP.pressZoomOn, LGP.bounce, LGP.groupButtons, LGP.fallbackAnim);
+    LGLog(@"kính Liquid Glass: %d (chỉ kiểu Liquid, style=%d)", LGP.glass, LGP.style);
 }
 
 // Bảng Cài đặt đổi công tắc -> Darwin notification -> mọi tiến trình đọc lại và dựng / gỡ vòng ngay, không cần mở lại app.
