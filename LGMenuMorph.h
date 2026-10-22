@@ -23,6 +23,7 @@ typedef struct {
     BOOL ringBack;                              // vòng quanh nút "quay lại" (thanh điều hướng)
     BOOL fallbackAnim;                          // menu không morph được -> chạy animation đơn giản thay vì hiện cái bụp
     double groupGap;                            // gộp các nút thành một viên thuốc khi khoảng hở giữa phần NHÌN THẤY <= giá trị này (pt)
+    int style;                                  // kiểu animation: 0 = morph metaball, 1 = giọt lỏng (iOS 26)
     int overlayMode;                            // 0 = tự chọn (extension -> view trong cửa sổ), 1 = UIWindow riêng, 2 = view trong cửa sổ
 } LGParams;
 
