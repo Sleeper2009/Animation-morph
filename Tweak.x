@@ -338,6 +338,7 @@ static void LGApplyPrefs(NSDictionary *p) {
     LGNUM(@"bounceAmp", bounceAmp) LGNUM(@"bounceOmega", bounceOmega) LGNUM(@"bounceZeta", bounceZeta)
     if ([p[@"material"] respondsToSelector:@selector(intValue)]) LGP.material = [p[@"material"] intValue];
     if ([p[@"overlayMode"] respondsToSelector:@selector(intValue)]) LGP.overlayMode = [p[@"overlayMode"] intValue];
+    if ([p[@"style"] respondsToSelector:@selector(intValue)]) LGP.style = [p[@"style"] intValue];
     LGP.useGlass = LGBoolOf(p[@"useGlass"], LGP.useGlass);
     LGP.coverButton = LGBoolOf(p[@"coverButton"], LGP.coverButton);
     LGP.hideSource = LGBoolOf(p[@"hideSource"], LGP.hideSource);
