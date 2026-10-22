@@ -1,6 +1,7 @@
 #import "LGMenuMorph.h"
 #import "LGLog.h"
 #import "LGRing.h"
+#import "LGGlass.h"
 #import <QuartzCore/QuartzCore.h>
 #import <CoreImage/CoreImage.h>
 #import <objc/runtime.h>
@@ -13,7 +14,7 @@ LGParams LGP = { .omega = 29.0, .offsetDelay = 0.124, .contentDelay = 0.048,
                  .blend = 24.0, .dur = 0.5, .closeDur = 0.38, .speed = 1.0,
                  .tint = 0.12, .shadow = 0.18, .rim = 0.14, .material = -1,
                  .bounceAmp = 10.0, .bounceOmega = 22.0, .bounceZeta = 0.4, .bounce = YES, .ring = YES, .ringAll = NO,
-                 .pressScale = 1.30, .pressOmega = 34.0, .pressZeta = 0.55, .pressFlash = 1.0, .pressHold = 0.12, .press = YES, .pressFlashOn = YES, .pressZoomOn = YES, .ringMargin = 8.0, .ringPadX = 12.0, .ringBack = YES, .fallbackAnim = YES, .groupGap = 16.0, .overlayMode = 0, .style = 0, .liquidDrop = 0.06,
+                 .pressScale = 1.30, .pressOmega = 34.0, .pressZeta = 0.55, .pressFlash = 1.0, .pressHold = 0.12, .press = YES, .pressFlashOn = YES, .pressZoomOn = YES, .ringMargin = 8.0, .ringPadX = 12.0, .ringBack = YES, .fallbackAnim = YES, .groupGap = 16.0, .overlayMode = 0, .style = 0, .liquidDrop = 0.06, .glass = NO,
                  .useGlass = YES, .debug = YES, .coverButton = YES, .hideSource = YES, .groupButtons = YES,
                  .blurText = YES, .closeAnim = YES, .dump = YES };
 
@@ -277,6 +278,7 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
 @property (nonatomic, strong) NSArray<UIView *> *sources;
 @property (nonatomic, strong) NSMutableArray<NSNumber *> *srcAlpha;
 @property (nonatomic, strong) NSMutableArray<UIView *> *iconSnaps;
+@property (nonatomic, strong) LMGlassHost *glass;   // lớp kính Liquid Glass (chỉ kiểu Liquid, khi bật)
 @property (nonatomic, strong) UIView *ow;      // UIWindow riêng, hoặc view phủ kín trong cửa sổ menu (xem LGMakeOverlay)
 @property (nonatomic, strong) UIView *reg, *clip, *fullSnap;
 @property (nonatomic, strong) UIVisualEffectView *fx;
@@ -464,6 +466,18 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
     self.clip = clip;
     self.clipMask = cm;
 
+    // 4b) kính Liquid Glass: hộp kính (MTMaterialView trong LMGlassHost) nằm DƯỚI nội dung. Chỉ dùng cho kiểu Liquid (thân là hình chữ nhật bo góc)
+    //     khi ở chế độ Thân; metaball (giọt đầu / cuối) vẫn dùng lớp blur + mặt nạ ở trên.
+    self.glass = nil;
+    if (LGP.glass && LGP.style == 1) {
+        LMGlassHost *g = LGGlassAcquire();
+        if (g) {
+            g.hidden = YES;
+            [reg insertSubview:g belowSubview:clip];
+            self.glass = g;
+        }
+    }
+
     // 5) viền mảnh
     CAShapeLayer *rl = [CAShapeLayer layer];
     rl.frame = reg.bounds;
@@ -608,6 +622,7 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
     [self applyPath:P];
+    [self updateGlass:&f];
 
     for (UIView *s in self.iconSnaps) s.alpha = (CGFloat)f.iconAlpha;
     self.fullSnap.alpha = (CGFloat)f.full;
@@ -638,6 +653,22 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
     CGPathRelease(P);
 }
 
+// Kính Liquid Glass: ở chế độ Thân thì hộp kính ĐÚNG bằng khung thân (frame + cornerRadius theo animation) và các lớp blur / màu / viền cũ tắt đi;
+// ở chế độ Giọt / Metaball (hình không phải chữ nhật bo góc) quay lại lớp cũ. Gọi trong CATransaction đã tắt action.
+- (void)updateGlass:(const LGTimeFrame *)f {
+    LMGlassHost *g = self.glass;
+    if (!g || g.superview != self.reg) return;
+    BOOL on = f->mode == LGModeBody && f->body.w >= 2 && f->body.h >= 2;
+    g.hidden = !on;
+    self.fx.hidden = on;
+    self.tintL.hidden = on;
+    self.rimL.hidden = on;
+    if (on) {
+        g.frame = CGRectMake(f->body.x - _R.origin.x, f->body.y - _R.origin.y, f->body.w, f->body.h);
+        [g setRadius:(CGFloat)f->r];
+    }
+}
+
 // Gán đường viền cho mọi lớp tạo nên khối kính (gọi bên trong CATransaction đã tắt action).
 - (void)applyPath:(CGPathRef)P {
     CGMutablePathRef outside = CGPathCreateMutable();
@@ -661,6 +692,7 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
     [self applyPath:P];
+    [self updateGlass:&f];      // f.mode = Dot: kính tắt, lớp blur cũ hiện lại
     for (UIView *s in self.iconSnaps) {
         s.alpha = 1;
         s.transform = CGAffineTransformMakeTranslation((CGFloat)dx, (CGFloat)dy);
@@ -922,6 +954,8 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
     [self.link invalidate];
     self.link = nil;
     [self restoreSources];
+    if (self.glass.superview == self.reg) { self.glass.hidden = YES; [self.glass removeFromSuperview]; }   // hộp kính được dùng lại cho phiên sau
+    self.glass = nil;
     LGOverlayDrop(self.ow);
     self.ow = nil;
     self.reg = nil;
