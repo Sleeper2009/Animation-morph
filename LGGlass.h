@@ -12,5 +12,8 @@
 - (void)setRadius:(CGFloat)r;
 @end
 
+/// Chuỗi tên class từ view lên tới cửa sổ (để ghi log: luật Ancestor Class của Liquid (Gl)ass khớp theo chuỗi này).
+NSString *LGGlassChain(UIView *v);
+
 /// Lấy hộp kính dùng lại (dựng một lần cho cả tiến trình). nil nếu không có MTMaterialView.
 LMGlassHost *LGGlassAcquire(void);
