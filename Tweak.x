@@ -354,6 +354,7 @@ static void LGApplyPrefs(NSDictionary *p) {
     LGP.ringBack = LGBoolOf(p[@"ringBack"], LGP.ringBack);
     LGP.fallbackAnim = LGBoolOf(p[@"fallbackAnim"], LGP.fallbackAnim);
     LGP.glass = LGBoolOf(p[@"glass"], LGP.glass);
+    LGP.glassDebug = LGBoolOf(p[@"glassDebug"], LGP.glassDebug);
     // Log chỉ ghi khi có sự kiện menu. Dump cây view/class (nặng) mặc định chỉ bật ở Ghi chú; app khác muốn dump thì đặt dump = true.
     LGP.dump = LGBoolOf(p[@"dump"], gIsNotes);
     LGP.debug = LGBoolOf(p[@"debug"], LGP.debug);
