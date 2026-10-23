@@ -25,6 +25,7 @@ typedef struct {
     double groupGap;                            // gộp các nút thành một viên thuốc khi khoảng hở giữa phần NHÌN THẤY <= giá trị này (pt)
     int style;                                  // kiểu animation: 0 = morph metaball, 1 = Liquid (iOS 26)
     BOOL glass;                                 // kính Liquid Glass (MTMaterialView + tweak Liquid (Gl)ass) cho kiểu Liquid
+    BOOL glassDebug;                            // viền đỏ quanh hộp kính + log chi tiết (để kiểm tra khi kính không hiện)
     double liquidDrop;                          // Liquid: độ rơi xuống khi mở (tỉ lệ chiều cao menu)
     int overlayMode;                            // 0 = tự chọn (extension -> view trong cửa sổ), 1 = UIWindow riêng, 2 = view trong cửa sổ
 } LGParams;
