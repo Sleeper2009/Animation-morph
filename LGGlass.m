@@ -1,7 +1,10 @@
 #import "LGGlass.h"
 #import "LGLog.h"
+#import "LGMenuMorph.h"
 #import <objc/message.h>
 #import <dlfcn.h>
+#import <mach-o/dyld.h>
+#import <string.h>
 
 // MTMaterialView theo đúng trình tự của BlurSearch:
 //   dlopen MaterialKit -> +materialViewWithRecipe:19 configuration:1 -> nền trong suốt, không nhận chạm, giãn theo cha,
@@ -76,6 +79,27 @@ static UIView *LGMakeMaterial(void) {
 static LMGlassHost *gGlass;
 static BOOL gGlassTried;
 
+NSString *LGGlassChain(UIView *v) {
+    NSMutableArray<NSString *> *a = [NSMutableArray new];
+    for (UIView *c = v; c && a.count < 12; c = c.superview) [a addObject:[NSString stringWithUTF8String:object_getClassName(c)]];
+    return [a componentsJoinedByString:@" < "];
+}
+
+// Ghi log danh sách tweak (dylib trong DynamicLibraries) đang được nạp trong tiến trình này: để biết tweak Liquid (Gl)ass
+// có đang chạy trong app này không (luật chỉ có tác dụng ở tiến trình mà tweak kính được nạp).
+static void LGLogInjectedTweaks(void) {
+    NSMutableArray<NSString *> *names = [NSMutableArray new];
+    uint32_t n = _dyld_image_count();
+    for (uint32_t i = 0; i < n; i++) {
+        const char *p = _dyld_get_image_name(i);
+        if (p && (strstr(p, "DynamicLibraries") || strstr(p, "TweakInject"))) {
+            const char *b = strrchr(p, '/');
+            [names addObject:[NSString stringWithUTF8String:b ? b + 1 : p]];
+        }
+    }
+    LGLog(@"tweak đang nạp trong tiến trình này (%lu): %@", (unsigned long)names.count, [names componentsJoinedByString:@", "]);
+}
+
 LMGlassHost *LGGlassAcquire(void) {
     if (!gGlassTried) {
         gGlassTried = YES;
@@ -84,5 +108,10 @@ LMGlassHost *LGGlassAcquire(void) {
         else LGLog(@"không có MTMaterialView (MaterialKit) -> không dùng được lớp kính");
     }
     [gGlass removeFromSuperview];
+    // chế độ kiểm tra: viền đỏ quanh hộp kính (thấy viền = hộp kính có hiện đúng chỗ; không thấy kính = lỗi nằm ở phía luật / tweak Liquid (Gl)ass)
+    gGlass.layer.borderWidth = LGP.glassDebug ? 3 : 0;
+    gGlass.layer.borderColor = UIColor.redColor.CGColor;
+    static BOOL logged;
+    if (!logged && gGlass) { logged = YES; LGLogInjectedTweaks(); }
     return gGlass;
 }
