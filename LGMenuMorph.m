@@ -14,7 +14,7 @@ LGParams LGP = { .omega = 29.0, .offsetDelay = 0.124, .contentDelay = 0.048,
                  .blend = 24.0, .dur = 0.5, .closeDur = 0.38, .speed = 1.0,
                  .tint = 0.12, .shadow = 0.18, .rim = 0.14, .material = -1,
                  .bounceAmp = 10.0, .bounceOmega = 22.0, .bounceZeta = 0.4, .bounce = YES, .ring = YES, .ringAll = NO,
-                 .pressScale = 1.30, .pressOmega = 34.0, .pressZeta = 0.55, .pressFlash = 1.0, .pressHold = 0.12, .press = YES, .pressFlashOn = YES, .pressZoomOn = YES, .ringMargin = 8.0, .ringPadX = 12.0, .ringBack = YES, .fallbackAnim = YES, .groupGap = 16.0, .overlayMode = 0, .style = 0, .liquidDrop = 0.06, .glass = NO,
+                 .pressScale = 1.30, .pressOmega = 34.0, .pressZeta = 0.55, .pressFlash = 1.0, .pressHold = 0.12, .press = YES, .pressFlashOn = YES, .pressZoomOn = YES, .ringMargin = 8.0, .ringPadX = 12.0, .ringBack = YES, .fallbackAnim = YES, .groupGap = 16.0, .overlayMode = 0, .style = 0, .liquidDrop = 0.06, .glass = NO, .glassDebug = NO,
                  .useGlass = YES, .debug = YES, .coverButton = YES, .hideSource = YES, .groupButtons = YES,
                  .blurText = YES, .closeAnim = YES, .dump = YES };
 
@@ -271,6 +271,7 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
     CGPoint _bdir;        // hướng nảy khi đóng (vector đơn vị chéo): NGƯỢC phía menu mở ra
     double _bt, _bdur;    // thời gian đã nảy / tổng thời gian nảy (s)
     BOOL _skipClose;      // app đã present bảng khác sau khi chạm mục menu: đóng không animation
+    BOOL _glassLogged;    // đã ghi log chi tiết về hộp kính trong phiên này
     CFTimeInterval _insideEndT;   // lần nhả tay gần nhất bên trong menu
     NSString *_sig, *_lastWatch, *_labelSig;
 }
@@ -475,7 +476,11 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
             g.hidden = YES;
             [reg insertSubview:g belowSubview:clip];
             self.glass = g;
+        } else {
+            LGLog(@"kính: đã bật nhưng không tạo được hộp kính (máy không có MTMaterialView?)");
         }
+    } else if (LGP.glass) {
+        LGLog(@"kính: đã bật nhưng kiểu animation đang là Morph (kính chỉ dùng cho kiểu Liquid)");
     }
 
     // 5) viền mảnh
@@ -617,12 +622,16 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
 // ---------------------------------------------------------------- khung hình
 - (void)renderAt:(double)tau {
     LGTimeFrame f = LGTimelineAt(&_spec, &_geom, tau);
+    // Có lớp kính: kính chỉ vẽ được hình chữ nhật bo góc nên bỏ metaball (giọt đầu / cuối là chính viên kính nhỏ lại / to ra)
+    if (self.glass && f.mode == LGModeMeta) f.mode = LGModeBody;
+    // Kiểu Liquid, lúc ĐÓNG: dấu "…" của nút hiện dần khi khối thu về nút (trước đây chỉ có hình tròn xám rồi "…" mới bật lên ở 12 ms cuối)
+    if (_spec.style == 1 && (self.state == LGStClosing || self.state == LGStBouncing)) f.iconAlpha = lgtl_clamp(1.0 - tau / 0.14, 0, 1);
     CGPathRef P = LGShapePath(&f, _R.origin.x, _R.origin.y);
 
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
     [self applyPath:P];
-    [self updateGlass:&f];
+    [self updateGlass:&f offset:CGPointZero];
 
     for (UIView *s in self.iconSnaps) s.alpha = (CGFloat)f.iconAlpha;
     self.fullSnap.alpha = (CGFloat)f.full;
@@ -655,17 +664,25 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
 
 // Kính Liquid Glass: ở chế độ Thân thì hộp kính ĐÚNG bằng khung thân (frame + cornerRadius theo animation) và các lớp blur / màu / viền cũ tắt đi;
 // ở chế độ Giọt / Metaball (hình không phải chữ nhật bo góc) quay lại lớp cũ. Gọi trong CATransaction đã tắt action.
-- (void)updateGlass:(const LGTimeFrame *)f {
+- (void)updateGlass:(const LGTimeFrame *)f offset:(CGPoint)off {
     LMGlassHost *g = self.glass;
     if (!g || g.superview != self.reg) return;
-    BOOL on = f->mode == LGModeBody && f->body.w >= 2 && f->body.h >= 2;
+    // Pha Giọt (chỉ còn nút): kính = viên tròn đúng bằng nút; pha Thân: kính = thân menu. Không còn pha nào dùng lớp xám cũ.
+    CGRect r = f->mode == LGModeDot ? CGRectMake(f->dot.x, f->dot.y, f->dot.w, f->dot.h) : CGRectMake(f->body.x, f->body.y, f->body.w, f->body.h);
+    CGFloat rad = f->mode == LGModeDot ? (CGFloat)f->dotR : (CGFloat)f->r;
+    BOOL on = r.size.width >= 2 && r.size.height >= 2;
     g.hidden = !on;
-    self.fx.hidden = on;
-    self.tintL.hidden = on;
-    self.rimL.hidden = on;
+    self.fx.hidden = YES;
+    self.tintL.hidden = YES;
+    self.rimL.hidden = YES;
     if (on) {
-        g.frame = CGRectMake(f->body.x - _R.origin.x, f->body.y - _R.origin.y, f->body.w, f->body.h);
-        [g setRadius:(CGFloat)f->r];
+        g.frame = CGRectOffset(r, -_R.origin.x + off.x, -_R.origin.y + off.y);
+        [g setRadius:rad];
+        if (!_glassLogged) {
+            _glassLogged = YES;
+            LGLog(@"kính: bật lần đầu trong phiên, khung=%@ bo=%.1f window=%s MTMaterialView=%s chuỗi view: %@", NSStringFromCGRect(g.frame), rad,
+                  g.window ? object_getClassName(g.window) : "(chưa có window)", g.material ? object_getClassName(g.material) : "nil", LGGlassChain(g.material));
+        }
     }
 }
 
@@ -692,7 +709,7 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
     [self applyPath:P];
-    [self updateGlass:&f];      // f.mode = Dot: kính tắt, lớp blur cũ hiện lại
+    [self updateGlass:&f offset:CGPointMake((CGFloat)dx, (CGFloat)dy)];      // viên kính của nút trượt chéo theo lò xo cùng icon
     for (UIView *s in self.iconSnaps) {
         s.alpha = 1;
         s.transform = CGAffineTransformMakeTranslation((CGFloat)dx, (CGFloat)dy);
