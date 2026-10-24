@@ -17,3 +17,13 @@ NSString *LGGlassChain(UIView *v);
 
 /// Lấy hộp kính dùng lại (dựng một lần cho cả tiến trình). nil nếu không có MTMaterialView.
 LMGlassHost *LGGlassAcquire(void);
+
+// ---- Chẩn đoán (chỉ chạy khi bật "Kiểm tra kính" = glassDebug và log đang bật) ----
+// Mục đích: biết tweak Liquid (Gl)ass có thật sự sửa MTMaterialView của hộp kính trong từng app hay không.
+/// Cây layer của hộp kính (class, khung, filters, backgroundFilters, compositingFilter, animation...). Tweak kính nếu có tác động thì sẽ để lại dấu ở đây.
+NSString *LGGlassProbe(LMGlassHost *host);
+/// Quét menu THẬT (đang có kính từ tweak) tìm view tên chứa Glass/Material/Backdrop/VisualEffect/Platter/Blur và ghi cây layer của chúng, để so với hộp kính của ta.
+NSString *LGGlassScanReal(UIView *root);
+/// Một lần mỗi tiến trình: IMP của các method MTMaterialView đang nằm ở dylib nào (nằm ở dylib tweak = đã bị hook),
+/// và class tên Glass/Liquid/Lens do dylib ngoài hệ thống định nghĩa (= mã của tweak kính có trong tiến trình này).
+void LGGlassLogEnvironment(void);
