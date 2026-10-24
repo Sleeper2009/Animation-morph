@@ -22,12 +22,15 @@ static void LGLogInit(void) {
         gWall0 = CFAbsoluteTimeGetCurrent();
         gMono0 = CACurrentMediaTime();
         NSMutableArray<NSString *> *cands = [NSMutableArray new];
+        // Tên file có bundle id của app để tìm bằng Filza là biết ngay file nào của app nào (trước đây mọi app đều tên LiquidMenu.log).
+        NSString *bid = NSBundle.mainBundle.bundleIdentifier ?: @"unknown";
+        NSString *fn = [NSString stringWithFormat:@"LiquidMenu-%@.log", bid];
         NSString *tmp = NSTemporaryDirectory();
-        if (tmp.length) [cands addObject:[tmp stringByAppendingPathComponent:@"LiquidMenu.log"]];
+        if (tmp.length) [cands addObject:[tmp stringByAppendingPathComponent:fn]];
         NSArray<NSString *> *caches = NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES);
-        if (caches.firstObject.length) [cands addObject:[caches.firstObject stringByAppendingPathComponent:@"LiquidMenu.log"]];
-        [cands addObjectsFromArray:@[ @"/var/mobile/Library/Caches/LiquidMenu.log", @"/var/mobile/Documents/LiquidMenu.log",
-                                      @"/var/tmp/LiquidMenu.log", @"/tmp/LiquidMenu.log" ]];
+        if (caches.firstObject.length) [cands addObject:[caches.firstObject stringByAppendingPathComponent:fn]];
+        for (NSString *dir in @[ @"/var/mobile/Library/Caches", @"/var/mobile/Documents", @"/var/tmp", @"/tmp" ])
+            [cands addObject:[dir stringByAppendingPathComponent:fn]];
         for (NSString *p in cands) {
             const char *cp = p.fileSystemRepresentation;
             struct stat st;
