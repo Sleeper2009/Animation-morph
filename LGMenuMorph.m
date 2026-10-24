@@ -603,6 +603,16 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
     _lastT = CACurrentMediaTime();
     self.link = [CADisplayLink displayLinkWithTarget:self selector:@selector(tick:)];
     [self.link addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
+    // Chẩn đoán kính (chỉ khi bật "Kiểm tra kính"; chỉ 3 phiên đầu mỗi tiến trình để log không phình): tweak Liquid (Gl)ass có sửa hộp kính không?
+    static int sProbeSessions;
+    if (self.glass && LGP.glassDebug && LGLogOn && ++sProbeSessions <= 3) {
+        [self probeGlass:@"lúc bắt đầu" real:NO];
+        __weak LGMenuMorph *wk = self;
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            LGMenuMorph *m = wk;
+            if (m && m.state != LGStDone && m.glass) [m probeGlass:@"sau 0,25 s" real:YES];
+        });
+    }
     LGLog(@"  morph bắt đầu; body sau khi dời: rect=%@ anchorPoint=%@ F=%@ cửa sổ menu level=%.0f", NSStringFromCGRect(LGWinRect(body)),
           NSStringFromCGPoint(body.layer.anchorPoint), NSStringFromCGRect(_F), (double)body.window.windowLevel);
     if (LGP.dump) {
@@ -617,6 +627,14 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
         });
         dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{ LGLogClassesOnce(); });
     }
+}
+
+// Ghi trạng thái hộp kính của ta; real = YES: ghi thêm các view kính của menu THẬT (đang có kính từ tweak) để so sánh.
+// Đọc log: nếu hộp kính trong app lỗi có cây layer / filters / hook y hệt MTMaterialView trần, còn app chạy được thì có thêm layer / filter lạ -> tweak kính không đụng tới nó ở app lỗi.
+- (void)probeGlass:(NSString *)when real:(BOOL)real {
+    LMGlassHost *g = self.glass;
+    LGLogBlock([NSString stringWithFormat:@"kính: hộp kính %@ (state=%ld tau=%.3f)", when, (long)self.state, _tau], LGGlassProbe(g));
+    if (real) LGLogBlock([NSString stringWithFormat:@"kính: các view kính của menu THẬT %@", when], LGGlassScanReal(self.container));
 }
 
 // ---------------------------------------------------------------- khung hình
