@@ -14,7 +14,7 @@ LGParams LGP = { .omega = 29.0, .offsetDelay = 0.124, .contentDelay = 0.048,
                  .blend = 24.0, .dur = 0.5, .closeDur = 0.38, .speed = 1.0,
                  .tint = 0.12, .shadow = 0.18, .rim = 0.14, .material = -1,
                  .bounceAmp = 10.0, .bounceOmega = 22.0, .bounceZeta = 0.4, .bounce = YES, .ring = YES, .ringAll = NO,
-                 .pressScale = 1.30, .pressOmega = 34.0, .pressZeta = 0.55, .pressFlash = 1.0, .pressHold = 0.12, .press = YES, .pressFlashOn = YES, .pressZoomOn = YES, .ringMargin = 8.0, .ringPadX = 12.0, .ringBack = YES, .fallbackAnim = YES, .groupGap = 16.0, .overlayMode = 0, .style = 0, .liquidDrop = 0.06, .glass = NO, .glassDebug = NO,
+                 .pressScale = 1.30, .pressOmega = 34.0, .pressZeta = 0.55, .pressFlash = 1.0, .pressHold = 0.12, .press = YES, .pressFlashOn = YES, .pressZoomOn = YES, .ringMargin = 8.0, .ringPadX = 12.0, .ringBack = YES, .fallbackAnim = YES, .groupGap = 16.0, .overlayMode = 0, .glass = NO,
                  .useGlass = YES, .debug = YES, .coverButton = YES, .hideSource = YES, .groupButtons = YES,
                  .blurText = YES, .closeAnim = YES, .dump = YES };
 
@@ -45,8 +45,6 @@ void LGParamsFinalize(void) {
     LGP.ringPadX = fmin(fmax(LGP.ringPadX, 0.0), 30.0);
     LGP.groupGap = fmin(fmax(LGP.groupGap, 0.0), 60.0);
     if (LGP.overlayMode < 0 || LGP.overlayMode > 2) LGP.overlayMode = 0;
-    if (LGP.style < 0 || LGP.style > 1) LGP.style = 0;
-    LGP.liquidDrop = fmin(fmax(LGP.liquidDrop, 0.0), 0.3);
     LGP.speed = fmin(fmax(LGP.speed, 0.4), 3.0);
     if (LGP.material < -1) LGP.material = -1;
     if (LGP.material > 4) LGP.material = 4;
@@ -271,7 +269,6 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
     CGPoint _bdir;        // hướng nảy khi đóng (vector đơn vị chéo): NGƯỢC phía menu mở ra
     double _bt, _bdur;    // thời gian đã nảy / tổng thời gian nảy (s)
     BOOL _skipClose;      // app đã present bảng khác sau khi chạm mục menu: đóng không animation
-    BOOL _glassLogged;    // đã ghi log chi tiết về hộp kính trong phiên này
     CFTimeInterval _insideEndT;   // lần nhả tay gần nhất bên trong menu
     NSString *_sig, *_lastWatch, *_labelSig;
 }
@@ -279,7 +276,7 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
 @property (nonatomic, strong) NSArray<UIView *> *sources;
 @property (nonatomic, strong) NSMutableArray<NSNumber *> *srcAlpha;
 @property (nonatomic, strong) NSMutableArray<UIView *> *iconSnaps;
-@property (nonatomic, strong) LMGlassHost *glass;   // lớp kính Liquid Glass (chỉ kiểu Liquid, khi bật)
+@property (nonatomic, strong) LMGlassHost *glass, *glassDot;   // lớp kính Liquid Glass (khi bật): glass = thân menu, glassDot = chấm (nút đang co lại)
 @property (nonatomic, strong) UIView *ow;      // UIWindow riêng, hoặc view phủ kín trong cửa sổ menu (xem LGMakeOverlay)
 @property (nonatomic, strong) UIView *reg, *clip, *fullSnap;
 @property (nonatomic, strong) UIVisualEffectView *fx;
@@ -358,8 +355,7 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
     _F = CGRectOffset(F0, pl.dx, pl.dy);
 
     _spec = (LGTimeSpec){ LGP.omega, LGP.offsetDelay, LGP.contentDelay, LGP.dotOmega, LGP.dotDelay,
-                          LGP.radOmega, LGP.radDelay, LGP.blend, LGP.dur, LGP.style, LGP.liquidDrop };
-    if (LGP.style == 1) _spec.dur = 0.36;      // kiểu Liquid lắng xuống nhanh hơn (đo từ video)
+                          LGP.radOmega, LGP.radDelay, LGP.blend, LGP.dur };
     double maxR = fmin(_F.size.width, _F.size.height) / 2;
     _geom = (LGTimeGeom){ _F.size.width, _F.size.height, pl.ax, pl.ay, pl.a0x, pl.a0y, pl.a1x, pl.a1y,
                           LGCornerOf(body, container, maxR), LGBoxOf(src) };
@@ -467,20 +463,23 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
     self.clip = clip;
     self.clipMask = cm;
 
-    // 4b) kính Liquid Glass: hộp kính (MTMaterialView trong LMGlassHost) nằm DƯỚI nội dung. Chỉ dùng cho kiểu Liquid (thân là hình chữ nhật bo góc)
-    //     khi ở chế độ Thân; metaball (giọt đầu / cuối) vẫn dùng lớp blur + mặt nạ ở trên.
+    // 4b) kính Liquid Glass: hai hộp kính (MTMaterialView trong LMGlassHost) nằm DƯỚI nội dung: một cho thân menu, một cho chấm (chính nút đang co lại).
+    //     Kính chỉ vẽ được hình chữ nhật bo góc nên metaball (cầu nối giữa thân và chấm) không dùng được khi bật kính:
+    //     thân và chấm là hai viên kính tách rời, chấm co về tâm nút trong lúc thân lớn ra. Thiếu MaterialKit -> quay về lớp blur + metaball.
     self.glass = nil;
-    if (LGP.glass && LGP.style == 1) {
-        LMGlassHost *g = LGGlassAcquire();
-        if (g) {
-            g.hidden = YES;
-            [reg insertSubview:g belowSubview:clip];
-            self.glass = g;
+    self.glassDot = nil;
+    if (LGP.glass) {
+        LMGlassHost *gb = LGGlassAcquire(0), *gd = LGGlassAcquire(1);
+        if (gb && gd) {
+            gb.hidden = YES;
+            gd.hidden = YES;
+            [reg insertSubview:gb belowSubview:clip];
+            [reg insertSubview:gd belowSubview:clip];
+            self.glass = gb;
+            self.glassDot = gd;
         } else {
-            LGLog(@"kính: đã bật nhưng không tạo được hộp kính (máy không có MTMaterialView?)");
+            LGLog(@"kính: đã bật nhưng không tạo được hộp kính (máy không có MTMaterialView?) -> dùng lớp blur");
         }
-    } else if (LGP.glass) {
-        LGLog(@"kính: đã bật nhưng kiểu animation đang là Morph (kính chỉ dùng cho kiểu Liquid)");
     }
 
     // 5) viền mảnh
@@ -603,16 +602,6 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
     _lastT = CACurrentMediaTime();
     self.link = [CADisplayLink displayLinkWithTarget:self selector:@selector(tick:)];
     [self.link addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
-    // Chẩn đoán kính (chỉ khi bật "Kiểm tra kính"; chỉ 3 phiên đầu mỗi tiến trình để log không phình): tweak Liquid (Gl)ass có sửa hộp kính không?
-    static int sProbeSessions;
-    if (self.glass && LGP.glassDebug && LGLogOn && ++sProbeSessions <= 3) {
-        [self probeGlass:@"lúc bắt đầu" real:NO];
-        __weak LGMenuMorph *wk = self;
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            LGMenuMorph *m = wk;
-            if (m && m.state != LGStDone && m.glass) [m probeGlass:@"sau 0,25 s" real:YES];
-        });
-    }
     LGLog(@"  morph bắt đầu; body sau khi dời: rect=%@ anchorPoint=%@ F=%@ cửa sổ menu level=%.0f", NSStringFromCGRect(LGWinRect(body)),
           NSStringFromCGPoint(body.layer.anchorPoint), NSStringFromCGRect(_F), (double)body.window.windowLevel);
     if (LGP.dump) {
@@ -629,21 +618,9 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
     }
 }
 
-// Ghi trạng thái hộp kính của ta; real = YES: ghi thêm các view kính của menu THẬT (đang có kính từ tweak) để so sánh.
-// Đọc log: nếu hộp kính trong app lỗi có cây layer / filters / hook y hệt MTMaterialView trần, còn app chạy được thì có thêm layer / filter lạ -> tweak kính không đụng tới nó ở app lỗi.
-- (void)probeGlass:(NSString *)when real:(BOOL)real {
-    LMGlassHost *g = self.glass;
-    LGLogBlock([NSString stringWithFormat:@"kính: hộp kính %@ (state=%ld tau=%.3f)", when, (long)self.state, _tau], LGGlassProbe(g));
-    if (real) LGLogBlock([NSString stringWithFormat:@"kính: các view kính của menu THẬT %@", when], LGGlassScanReal(self.container));
-}
-
 // ---------------------------------------------------------------- khung hình
 - (void)renderAt:(double)tau {
     LGTimeFrame f = LGTimelineAt(&_spec, &_geom, tau);
-    // Có lớp kính: kính chỉ vẽ được hình chữ nhật bo góc nên bỏ metaball (giọt đầu / cuối là chính viên kính nhỏ lại / to ra)
-    if (self.glass && f.mode == LGModeMeta) f.mode = LGModeBody;
-    // Kiểu Liquid, lúc ĐÓNG: dấu "…" của nút hiện dần khi khối thu về nút (trước đây chỉ có hình tròn xám rồi "…" mới bật lên ở 12 ms cuối)
-    if (_spec.style == 1 && (self.state == LGStClosing || self.state == LGStBouncing)) f.iconAlpha = lgtl_clamp(1.0 - tau / 0.14, 0, 1);
     CGPathRef P = LGShapePath(&f, _R.origin.x, _R.origin.y);
 
     [CATransaction begin];
@@ -680,27 +657,28 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
     CGPathRelease(P);
 }
 
-// Kính Liquid Glass: ở chế độ Thân thì hộp kính ĐÚNG bằng khung thân (frame + cornerRadius theo animation) và các lớp blur / màu / viền cũ tắt đi;
-// ở chế độ Giọt / Metaball (hình không phải chữ nhật bo góc) quay lại lớp cũ. Gọi trong CATransaction đã tắt action.
+// Kính Liquid Glass: thân menu = hộp kính `glass` (frame + cornerRadius theo animation), chấm nút = hộp kính `glassDot`; các lớp blur / màu / viền cũ tắt đi.
+//   Dot: chỉ có viên kính của nút | Meta: thân + chấm (hai viên kính chồng lên nhau, không có cầu nối metaball) | Body: chỉ thân.
+// off = độ dời (pha nảy). Gọi trong CATransaction đã tắt action.
 - (void)updateGlass:(const LGTimeFrame *)f offset:(CGPoint)off {
-    LMGlassHost *g = self.glass;
-    if (!g || g.superview != self.reg) return;
-    // Pha Giọt (chỉ còn nút): kính = viên tròn đúng bằng nút; pha Thân: kính = thân menu. Không còn pha nào dùng lớp xám cũ.
-    CGRect r = f->mode == LGModeDot ? CGRectMake(f->dot.x, f->dot.y, f->dot.w, f->dot.h) : CGRectMake(f->body.x, f->body.y, f->body.w, f->body.h);
-    CGFloat rad = f->mode == LGModeDot ? (CGFloat)f->dotR : (CGFloat)f->r;
-    BOOL on = r.size.width >= 2 && r.size.height >= 2;
-    g.hidden = !on;
+    LMGlassHost *gb = self.glass, *gd = self.glassDot;
+    if (!gb || !gd || gb.superview != self.reg || gd.superview != self.reg) return;
     self.fx.hidden = YES;
     self.tintL.hidden = YES;
     self.rimL.hidden = YES;
-    if (on) {
-        g.frame = CGRectOffset(r, -_R.origin.x + off.x, -_R.origin.y + off.y);
-        [g setRadius:rad];
-        if (!_glassLogged) {
-            _glassLogged = YES;
-            LGLog(@"kính: bật lần đầu trong phiên, khung=%@ bo=%.1f window=%s MTMaterialView=%s chuỗi view: %@", NSStringFromCGRect(g.frame), rad,
-                  g.window ? object_getClassName(g.window) : "(chưa có window)", g.material ? object_getClassName(g.material) : "nil", LGGlassChain(g.material));
-        }
+    CGRect rb = CGRectMake(f->body.x, f->body.y, f->body.w, f->body.h);
+    CGRect rd = CGRectMake(f->dot.x, f->dot.y, f->dot.w, f->dot.h);
+    BOOL onB = f->mode != LGModeDot && rb.size.width >= 2 && rb.size.height >= 2;
+    BOOL onD = f->mode != LGModeBody && rd.size.width >= 2 && rd.size.height >= 2;
+    gb.hidden = !onB;
+    gd.hidden = !onD;
+    if (onB) {
+        gb.frame = CGRectOffset(rb, -_R.origin.x + off.x, -_R.origin.y + off.y);
+        [gb setRadius:(CGFloat)f->r];
+    }
+    if (onD) {
+        gd.frame = CGRectOffset(rd, -_R.origin.x + off.x, -_R.origin.y + off.y);
+        [gd setRadius:(CGFloat)f->dotR];
     }
 }
 
@@ -989,8 +967,11 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
     [self.link invalidate];
     self.link = nil;
     [self restoreSources];
-    if (self.glass.superview == self.reg) { self.glass.hidden = YES; [self.glass removeFromSuperview]; }   // hộp kính được dùng lại cho phiên sau
+    // hộp kính được dùng lại cho phiên sau
+    if (self.glass.superview == self.reg) { self.glass.hidden = YES; [self.glass removeFromSuperview]; }
+    if (self.glassDot.superview == self.reg) { self.glassDot.hidden = YES; [self.glassDot removeFromSuperview]; }
     self.glass = nil;
+    self.glassDot = nil;
     LGOverlayDrop(self.ow);
     self.ow = nil;
     self.reg = nil;
