@@ -5,7 +5,7 @@
 #import "LGLog.h"
 #import "LGRing.h"
 
-// Cài đặt: domain CFPreferences do bảng Cài đặt (LiquidMenuPrefs) ghi; file plist cùng tên vẫn đọc được để chỉnh tay (khoá nâng cao như omega, hints...).
+// Cài đặt: domain CFPreferences do bảng Cài đặt (LiquidMenuPrefs) ghi; file plist cùng tên vẫn đọc được để chỉnh tay (khoá nâng cao như speed, closeDur, hints...).
 #define kDomain @"com.fujb-2009.liquidmenu"
 #define kPrefs @"/var/mobile/Library/Preferences/com.fujb-2009.liquidmenu.plist"
 #define kOldPrefs @"/var/mobile/Library/Preferences/com.yourname.liquidmenu.plist"
@@ -328,14 +328,11 @@ static void LGApplyPrefs(NSDictionary *p) {
         for (id h in (NSArray *)raw) if ([h isKindOfClass:NSString.class] && ((NSString *)h).length) [hs addObject:h];
     gHints = hs.count ? [hs copy] : @[@"ContextMenu", @"_UIMenu", @"MenuContainer"];
 
-    LGNUM(@"omega", omega) LGNUM(@"offsetDelay", offsetDelay) LGNUM(@"contentDelay", contentDelay)
-    LGNUM(@"dotOmega", dotOmega) LGNUM(@"dotDelay", dotDelay) LGNUM(@"radOmega", radOmega)
-    LGNUM(@"radDelay", radDelay) LGNUM(@"blend", blend) LGNUM(@"speed", speed) LGNUM(@"closeDur", closeDur)
+    LGNUM(@"speed", speed) LGNUM(@"closeDur", closeDur)
     LGNUM(@"tint", tint) LGNUM(@"shadow", shadow) LGNUM(@"rim", rim)
     LGNUM(@"pressScale", pressScale) LGNUM(@"pressOmega", pressOmega) LGNUM(@"pressZeta", pressZeta)
     LGNUM(@"pressFlash", pressFlash) LGNUM(@"pressHold", pressHold)
     LGNUM(@"ringMargin", ringMargin) LGNUM(@"ringPadX", ringPadX) LGNUM(@"groupGap", groupGap)
-    LGNUM(@"bounceAmp", bounceAmp) LGNUM(@"bounceOmega", bounceOmega) LGNUM(@"bounceZeta", bounceZeta)
     if ([p[@"material"] respondsToSelector:@selector(intValue)]) LGP.material = [p[@"material"] intValue];
     if ([p[@"overlayMode"] respondsToSelector:@selector(intValue)]) LGP.overlayMode = [p[@"overlayMode"] intValue];
     LGP.useGlass = LGBoolOf(p[@"useGlass"], LGP.useGlass);
@@ -344,7 +341,6 @@ static void LGApplyPrefs(NSDictionary *p) {
     LGP.groupButtons = LGBoolOf(p[@"groupButtons"], LGP.groupButtons);
     LGP.blurText = LGBoolOf(p[@"blurText"], LGP.blurText);
     LGP.closeAnim = LGBoolOf(p[@"closeAnim"], LGP.closeAnim);
-    LGP.bounce = LGBoolOf(p[@"bounce"], LGP.bounce);
     LGP.pressFlashOn = LGBoolOf(p[@"flash"], YES);
     LGP.pressZoomOn = LGBoolOf(p[@"zoom"], YES);
     LGP.press = LGP.pressFlashOn || LGP.pressZoomOn;
@@ -358,8 +354,8 @@ static void LGApplyPrefs(NSDictionary *p) {
     LGP.debug = LGBoolOf(p[@"debug"], LGP.debug);
     LGParamsFinalize();
     LGLogOn = LGP.debug;
-    LGLog(@"cài đặt [%@]: bật=%d vòng=%d vòngQuayLại=%d lóe=%d phóng=%d nảy=%d gộp=%d dựPhòng=%d", gBid, gEnabled, LGP.ring, LGP.ringBack,
-          LGP.pressFlashOn, LGP.pressZoomOn, LGP.bounce, LGP.groupButtons, LGP.fallbackAnim);
+    LGLog(@"cài đặt [%@]: bật=%d vòng=%d vòngQuayLại=%d lóe=%d phóng=%d gộp=%d dựPhòng=%d", gBid, gEnabled, LGP.ring, LGP.ringBack,
+          LGP.pressFlashOn, LGP.pressZoomOn, LGP.groupButtons, LGP.fallbackAnim);
     LGLog(@"kính Liquid Glass: %d", LGP.glass);
 }
 
