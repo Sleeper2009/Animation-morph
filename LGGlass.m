@@ -34,6 +34,7 @@ static UIView *LGMakeMaterial(void) {
 
 @implementation LMGlassHost {
     UIView *_material;
+    CAShapeLayer *_mask;
 }
 - (UIView *)material { return _material; }
 
@@ -43,25 +44,35 @@ static UIView *LGMakeMaterial(void) {
     self.backgroundColor = UIColor.clearColor;
     self.opaque = NO;
     self.clipsToBounds = YES;
-    self.layer.cornerCurve = kCACornerCurveContinuous;
     _material = LGMakeMaterial();
     if (_material) {
         _material.frame = self.bounds;
-        _material.layer.cornerCurve = kCACornerCurveContinuous;
         _material.clipsToBounds = YES;
         [self addSubview:_material];
     }
     return self;
 }
 
-- (void)setRadius:(CGFloat)r { self.layer.cornerRadius = r; }
+- (void)setShapePath:(CGPathRef)path {
+    if (!_material) return;
+    if (!_mask) {
+        _mask = [CAShapeLayer layer];
+        _mask.fillColor = UIColor.blackColor.CGColor;
+        _material.layer.mask = _mask;
+    }
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    _mask.frame = self.bounds;
+    _mask.path = path;
+    [CATransaction commit];
+}
 
 - (void)layoutSubviews {
     [super layoutSubviews];
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
     _material.frame = self.bounds;
-    _material.layer.cornerRadius = self.layer.cornerRadius;
+    _mask.frame = self.bounds;
     [CATransaction commit];
 }
 
@@ -73,18 +84,16 @@ static UIView *LGMakeMaterial(void) {
 }
 @end
 
-// Hai hộp kính dùng lại cho cả tiến trình: 0 = thân menu, 1 = "chấm" (chính nút đang co lại trong lúc thân lớn ra).
-static LMGlassHost *gGlass[2];
-static BOOL gGlassTried[2];
+static LMGlassHost *gGlass;
+static BOOL gGlassTried;
 
-LMGlassHost *LGGlassAcquire(int slot) {
-    if (slot < 0 || slot > 1) return nil;
-    if (!gGlassTried[slot]) {
-        gGlassTried[slot] = YES;
+LMGlassHost *LGGlassAcquire(void) {
+    if (!gGlassTried) {
+        gGlassTried = YES;
         LMGlassHost *h = [[LMGlassHost alloc] initWithFrame:CGRectMake(0, 0, 100, 100)];
-        if (h.material) gGlass[slot] = h;
+        if (h.material) gGlass = h;
         else LGLog(@"không có MTMaterialView (MaterialKit) -> không dùng được lớp kính");
     }
-    [gGlass[slot] removeFromSuperview];
-    return gGlass[slot];
+    [gGlass removeFromSuperview];
+    return gGlass;
 }
