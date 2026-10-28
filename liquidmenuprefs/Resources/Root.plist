@@ -154,20 +154,6 @@
 			<key>defaults</key>
 			<string>com.fujb-2009.liquidmenu</string>
 			<key>key</key>
-			<string>bounce</string>
-			<key>label</key>
-			<string>Nảy khi đóng</string>
-		</dict>
-		<dict>
-			<key>PostNotification</key>
-			<string>com.fujb-2009.liquidmenu/reload</string>
-			<key>cell</key>
-			<string>PSSwitchCell</string>
-			<key>default</key>
-			<true/>
-			<key>defaults</key>
-			<string>com.fujb-2009.liquidmenu</string>
-			<key>key</key>
 			<string>groupButtons</string>
 			<key>label</key>
 			<string>Gộp nút liền nhau</string>
