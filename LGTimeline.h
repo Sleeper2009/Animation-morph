@@ -101,7 +101,8 @@ static inline LGMorphFrame LGMorphOpen(const LGMorphGeom *g, double t) {
         return f;
     }
     if (t < 0) t = 0;
-    f.rect = lgtl_mix(g, lgtl_spring(&LGSP_CX, t), lgtl_spring(&LGSP_CY, t), lgtl_spring(&LGSP_W, t), lgtl_spring(&LGSP_H, t));
+    // lò xo cho p = 1 tại nút -> 0 tại menu; lgtl_mix dùng q = 0 tại nút -> 1 tại menu, nên q = 1 - p
+    f.rect = lgtl_mix(g, 1 - lgtl_spring(&LGSP_CX, t), 1 - lgtl_spring(&LGSP_CY, t), 1 - lgtl_spring(&LGSP_W, t), 1 - lgtl_spring(&LGSP_H, t));
     f.k = (1 - lgtl_ss(0.08, 0.20, t)) * 0.9 + 0.1 * (1 - lgtl_ss(0.2, 0.4, t));
     f.cs = 1 + 0.28 * (1 - lgtl_ss(0.10, 0.24, t));
     f.blur = (1 - lgtl_ss(0.02, 0.20, t));
