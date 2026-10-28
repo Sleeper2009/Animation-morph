@@ -7,7 +7,7 @@
 // cover = 0: giữ menu ở chỗ hệ thống, neo vào điểm của menu gần tâm nút nhất (hành vi cũ).
 #ifndef LGPLAN_H
 #define LGPLAN_H
-#include "LGMetaball.h"   // LGBox
+typedef struct { double x, y, w, h; } LGBox;   // khung: gốc trái-trên + kích thước
 
 typedef struct {
     double ax, ay;       // góc neo của thân (0 hoặc 1; ở chế độ cover=0 là tỉ lệ bất kỳ trong [0,1])
