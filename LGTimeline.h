@@ -6,7 +6,10 @@
 //           (menu lao xuống rồi mới lắng lại). Giải tích nên ổn định ở mọi bước thời gian.
 //   ĐÓNG  = bảng khung đo trực tiếp từ video, nội suy PCHIP: hình lao xuống (lấy đà), co lại, vọt qua nút rồi lắng xuống.
 //           Bắt đầu từ khung hình hiện tại (đóng khi đang mở dở): độ lệch so với menu tắt dần trong 0,16 s.
-//   bo góc = bầu dục (như nút) -> bo góc cuối; góc trên-phải giữ độ cong của nút (rAnchor); bán kính bị co theo luật CSS border-radius.
+//   bo góc = VIÊN THUỐC tròn đều (bán kính = nửa cạnh ngắn, hai đầu bán nguyệt) -> bo góc cuối. Menu ngắn / rộng: một góc (góc neo, phía nút)
+//           giữ độ cong của nút nên khối là "giọt nước"; menu DÀI: bỏ góc neo, khối là viên thuốc rồi bung ra, không nhọn ở góc nào.
+//   góc neo = góc của menu trùng với góc của nút (theo vị trí nút trên màn hình: trên/dưới, trái/phải), không cố định ở trên-phải.
+//   bám nút = khối không được tách khỏi nút quá ~1,25 cạnh nút trong lúc lò xo "bắn" (menu dài thì quãng bắn lớn hơn nhiều).
 //
 // Bản mẫu làm việc theo toạ độ px của khung đo; ở đây mọi đại lượng được CHUẨN HOÁ theo quãng đường nút -> menu
 // (q = 0 tại nút, q = 1 tại menu) nên dùng được cho bất kỳ vị trí / kích thước nút và menu nào.
@@ -22,7 +25,8 @@ typedef struct {
     LGBox src;          // khung nút (hoặc cả viên thuốc) = hình xuất phát / kết thúc
     LGBox dst;          // khung menu cuối (sau khi dời)
     double R;           // bo góc cuối của menu
-    double rAnchor;     // độ cong giữ lại ở góc trên-phải lúc biến hình (= độ cong của nút)
+    double rAnchor;     // độ cong giữ lại ở góc neo lúc biến hình (= độ cong của nút)
+    int ax, ay;         // góc neo của menu: ax = 1 -> neo phải, 0 -> trái; ay = 1 -> neo dưới (menu bung lên), 0 -> trên (menu bung xuống)
 } LGMorphGeom;
 
 // Độ lệch của khung hình đang chạy so với menu khi bắt đầu đóng (tâm x, tâm y, rộng, cao)
@@ -83,6 +87,12 @@ static inline double lgtl_pchip(const double *xs, const double *ys, int n, doubl
     return (2 * s3 - 3 * s2 + 1) * ys[i] + (s3 - 2 * s2 + s) * h * m[i] + (-2 * s3 + 3 * s2) * ys[i + 1] + (s3 - s2) * h * m[i + 1];
 }
 
+// Trọng số góc neo theo độ dài menu: 1 = menu ngắn / rộng (giữ góc neo, hình giọt nước), 0 = menu dài (không có góc nhọn nào).
+static inline double lgtl_anchor_weight(const LGMorphGeom *g) {
+    double asp = g->dst.w > 1 ? g->dst.h / g->dst.w : 1;
+    return 1 - lgtl_ss(1.05, 1.45, asp);
+}
+
 static inline LGBox lgtl_box_cwh(double cx, double cy, double w, double h) { LGBox b = { cx - w / 2, cy - h / 2, w, h }; return b; }
 static inline double lgtl_cx(LGBox b) { return b.x + b.w / 2; }
 static inline double lgtl_cy(LGBox b) { return b.y + b.h / 2; }
@@ -91,6 +101,18 @@ static inline double lgtl_cy(LGBox b) { return b.y + b.h / 2; }
 static inline LGBox lgtl_mix(const LGMorphGeom *g, double qcx, double qcy, double qw, double qh) {
     double sx = lgtl_cx(g->src), sy = lgtl_cy(g->src), dx = lgtl_cx(g->dst), dy = lgtl_cy(g->dst);
     return lgtl_box_cwh(sx + qcx * (dx - sx), sy + qcy * (dy - sy), g->src.w + qw * (g->dst.w - g->src.w), g->src.h + qh * (g->dst.h - g->src.h));
+}
+
+// Giữ khối BÁM vào nút: quãng khối rơi xa khỏi cạnh neo của nút (mép trên nút nếu menu bung xuống, mép dưới nếu bung lên; mép phải / trái tương tự)
+// vượt 1,25 cạnh nút thì phần vượt chỉ còn 30% (mềm, không bị khựng). Menu càng dài lò xo "bắn" càng xa -> không có chặn này khối sẽ lơ lửng tách khỏi nút.
+static inline double lgtl_softcap(double gap, double c0) { return gap <= c0 ? gap : c0 + (gap - c0) * 0.3; }
+static inline LGBox lgtl_attach(const LGMorphGeom *g, LGBox r) {
+    double ch = g->src.h * 1.25, cw = g->src.w * 1.25;
+    if (!g->ay) { double gap = r.y - g->src.y; if (gap > ch) r.y = g->src.y + lgtl_softcap(gap, ch); }
+    else { double gap = (g->src.y + g->src.h) - (r.y + r.h); if (gap > ch) r.y += gap - lgtl_softcap(gap, ch); }
+    if (!g->ax) { double gap = r.x - g->src.x; if (gap > cw) r.x = g->src.x + lgtl_softcap(gap, cw); }
+    else { double gap = (g->src.x + g->src.w) - (r.x + r.w); if (gap > cw) r.x += gap - lgtl_softcap(gap, cw); }
+    return r;
 }
 
 /// Khung hình pha MỞ tại t giây kể từ lúc menu hiện (0 .. LGMORPH_OPEN_DUR). t >= dur: đúng khung menu.
@@ -102,7 +124,7 @@ static inline LGMorphFrame LGMorphOpen(const LGMorphGeom *g, double t) {
     }
     if (t < 0) t = 0;
     // lò xo cho p = 1 tại nút -> 0 tại menu; lgtl_mix dùng q = 0 tại nút -> 1 tại menu, nên q = 1 - p
-    f.rect = lgtl_mix(g, 1 - lgtl_spring(&LGSP_CX, t), 1 - lgtl_spring(&LGSP_CY, t), 1 - lgtl_spring(&LGSP_W, t), 1 - lgtl_spring(&LGSP_H, t));
+    f.rect = lgtl_attach(g, lgtl_mix(g, 1 - lgtl_spring(&LGSP_CX, t), 1 - lgtl_spring(&LGSP_CY, t), 1 - lgtl_spring(&LGSP_W, t), 1 - lgtl_spring(&LGSP_H, t)));
     f.k = (1 - lgtl_ss(0.08, 0.20, t)) * 0.9 + 0.1 * (1 - lgtl_ss(0.2, 0.4, t));
     f.cs = 1 + 0.28 * (1 - lgtl_ss(0.10, 0.24, t));
     f.blur = (1 - lgtl_ss(0.02, 0.20, t));
@@ -123,8 +145,8 @@ static inline LGMorphFrame LGMorphClose(const LGMorphGeom *g, LGMorphOff off, do
     LGMorphFrame f;
     double tc = lgtl_clamp(t, 0, LGMORPH_CLOSE_T);
     double u = 1 - lgtl_ss(0, 0.16, t);
-    LGBox r = lgtl_mix(g, lgtl_pchip(LGCL_T, LGCL_CX, LGCLOSE_N, tc), lgtl_pchip(LGCL_T, LGCL_CY, LGCLOSE_N, tc),
-                          lgtl_pchip(LGCL_T, LGCL_W, LGCLOSE_N, tc), lgtl_pchip(LGCL_T, LGCL_H, LGCLOSE_N, tc));
+    LGBox r = lgtl_attach(g, lgtl_mix(g, lgtl_pchip(LGCL_T, LGCL_CX, LGCLOSE_N, tc), lgtl_pchip(LGCL_T, LGCL_CY, LGCLOSE_N, tc),
+                                         lgtl_pchip(LGCL_T, LGCL_W, LGCLOSE_N, tc), lgtl_pchip(LGCL_T, LGCL_H, LGCLOSE_N, tc)));
     f.rect = lgtl_box_cwh(lgtl_cx(r) + off.cx * u, lgtl_cy(r) + off.cy * u, r.w + off.w * u, r.h + off.h * u);
     f.k = lgtl_ss(0.02, 0.13, t);
     f.ca = 1 - lgtl_ss(0.02, 0.15, t);
@@ -136,13 +158,16 @@ static inline LGMorphFrame LGMorphClose(const LGMorphGeom *g, LGMorphOff off, do
     return f;
 }
 
-/// Bán kính 4 góc: bầu dục (nửa rộng / nửa cao) <-> bo góc cuối R theo k; góc trên-phải về rAnchor.
-/// Áp luật CSS border-radius: nếu tổng hai bán kính kề nhau vượt cạnh thì co TẤT CẢ bán kính cùng một tỉ lệ.
+/// Bán kính 4 góc (tròn đều): viên thuốc (nửa cạnh ngắn) <-> bo góc cuối R theo k. Góc neo (theo vị trí nút) giữ độ cong của nút lúc k = 1,
+/// nhưng chỉ với menu ngắn / rộng; menu dài thì không có góc nào khác biệt. Vẫn áp luật CSS border-radius (co tất cả nếu hai bán kính kề nhau vượt cạnh).
 static inline LGRadii LGMorphRadii(const LGMorphGeom *g, const LGMorphFrame *f) {
-    double w = fmax(f->rect.w, 0), h = fmax(f->rect.h, 0), hx = w / 2, hy = h / 2;
-    double rx = fmin(lgtl_lerp(g->R, hx, f->k), hx), ry = fmin(lgtl_lerp(g->R, hy, f->k), hy);
-    double rt = fmin(fmin(lgtl_lerp(g->R, g->rAnchor, f->k), hx), hy);
-    LGRadii r = { rx, ry, rt, rt, rx, ry, rx, ry };
+    double w = fmax(f->rect.w, 0), h = fmax(f->rect.h, 0), rcap = fmin(w, h) / 2;
+    double a = lgtl_anchor_weight(g);
+    double rb = fmin(lgtl_lerp(g->R, rcap, f->k), rcap);
+    double ra = fmin(lgtl_lerp(g->R, lgtl_lerp(rcap, fmin(g->rAnchor, rcap), a), f->k), rcap);
+    double c[4] = { rb, rb, rb, rb };          // TL, TR, BR, BL
+    c[g->ay ? (g->ax ? 2 : 3) : (g->ax ? 1 : 0)] = ra;
+    LGRadii r = { c[0], c[0], c[1], c[1], c[2], c[2], c[3], c[3] };
     double s = 1;
     if (r.tlx + r.trx > w && r.tlx + r.trx > 0) s = fmin(s, w / (r.tlx + r.trx));
     if (r.brx + r.blx > w && r.brx + r.blx > 0) s = fmin(s, w / (r.brx + r.blx));
