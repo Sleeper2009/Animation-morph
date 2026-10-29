@@ -46,6 +46,9 @@ typedef struct {
     double att;         // 0..1: mức nút và khối nước hút nhau (nút méo như giọt nước kéo về phía khối)
     double ux, uy;      // hướng đơn vị từ nút tới khối nước
     double bx, by;      // độ nghiêng của nút về phía khối nước (pt)
+    double dcx, dcy;    // đĩa kính của nút: tâm
+    double dr;          // bán kính (0 -> không vẽ); đĩa là GIỌT NƯỚC có đuôi chĩa về phía khối nước (hướng ux, uy), hợp với khối nước thành một khối
+    double dL;          // độ dài đuôi vượt ra ngoài vòng tròn (pt)
 } LGMorphFrame;
 
 // Bán kính 4 góc (elip) sau khi áp luật CSS border-radius
@@ -128,7 +131,7 @@ static inline LGBox lgtl_mix_close(const LGMorphGeom *g, double qc, double qs, d
 static inline LGMorphFrame LGMorphOpen(const LGMorphGeom *g, double t) {
     LGMorphFrame f;
     if (t >= LGMORPH_OPEN_DUR) {
-        f.rect = g->dst; f.k = 0; f.cs = 1; f.blur = 0; f.ca = 1; f.dots = 0; f.alpha = 1; f.pull = 0; f.btn = 1; f.pin = 0; f.att = 0; f.ux = f.uy = f.bx = f.by = 0;
+        f.rect = g->dst; f.k = 0; f.cs = 1; f.blur = 0; f.ca = 1; f.dots = 0; f.alpha = 1; f.pull = 0; f.btn = 1; f.pin = 0; f.att = 0; f.ux = f.uy = f.bx = f.by = 0; f.dcx = f.dcy = f.dr = f.dL = 0;
         return f;
     }
     if (t < 0) t = 0;
@@ -139,7 +142,7 @@ static inline LGMorphFrame LGMorphOpen(const LGMorphGeom *g, double t) {
     f.blur = (1 - lgtl_ss(0.02, 0.20, t));
     f.ca = lgtl_ss(0, 0.14, t);
     f.dots = 1 - lgtl_ss(0, 0.04, t);
-    f.alpha = 1; f.pull = 0; f.btn = 1; f.pin = 0; f.att = 0; f.ux = f.uy = f.bx = f.by = 0;
+    f.alpha = 1; f.pull = 0; f.btn = 1; f.pin = 0; f.att = 0; f.ux = f.uy = f.bx = f.by = 0; f.dcx = f.dcy = f.dr = f.dL = 0;
     return f;
 }
 
@@ -175,14 +178,22 @@ static inline LGMorphFrame LGMorphClose(const LGMorphGeom *g, LGMorphOff off, do
     // nút: hiện NHỎ (0,62) đứng yên tại chỗ; lúc khối nước tới gần thì méo / nghiêng về phía khối (hút nhau); hợp nhất thì nảy phồng lên bằng lò xo tắt dần
     f.pin = 1;
     f.dots = lgtl_ss(0.03, 0.09, t);
-    double ex = lgtl_cx(f.rect) - sx, ey = lgtl_cy(f.rect) - sy, ed = sqrt(ex * ex + ey * ey);
-    f.ux = ed > 1e-3 ? ex / ed : 0;  f.uy = ed > 1e-3 ? ey / ed : 0;
-    f.bx = f.ux * f.att * 0.16 * g->src.w;  f.by = f.uy * f.att * 0.16 * g->src.h;
+    // hướng hút = hướng cố định từ nút tới tâm menu (khối nước trượt đúng trên đường này) -> không bị nhảy khi hai tâm gần trùng nhau
+    double ex = lgtl_cx(g->dst) - sx, ey = lgtl_cy(g->dst) - sy, ed = sqrt(ex * ex + ey * ey);
+    f.ux = ed > 1e-3 ? ex / ed : 0;  f.uy = ed > 1e-3 ? ey / ed : 1;
+    double bdx = lgtl_cx(f.rect) - sx, bdy = lgtl_cy(f.rect) - sy, bd = sqrt(bdx * bdx + bdy * bdy);   // khoảng cách tâm khối nước - tâm nút
+    double lean = f.att * 0.16 * lgtl_ss(0.2 * g->src.w, 1.2 * g->src.w, bd);     // nút nghiêng về phía khối, hết nghiêng khi hợp nhất
+    f.bx = f.ux * lean * g->src.w;  f.by = f.uy * lean * g->src.h;
     double tau = t - LGCLOSE_MERGE, z = 0.45, w = 28.0, wd = w * sqrt(1 - z * z);
     double spr = tau <= 0 ? 0 : 1 - exp(-z * w * tau) * (cos(wd * tau) + (z * w / wd) * sin(wd * tau));
     f.btn = 0.62 + 0.38 * spr;
     // khối kính hoà vào nút lúc hợp nhất (nút tự có nền kính riêng)
     f.alpha = 1 - lgtl_ss(LGCLOSE_MERGE - 0.015, LGCLOSE_MERGE + 0.05, t);
+    // đĩa kính của nút: giọt nước có ĐUÔI chĩa về phía khối nước (khối nước cũng thót đầu về phía nút) -> hai giọt chĩa vào nhau, hợp lại thành một khối.
+    double appear = lgtl_ss(0.03, 0.09, t);
+    f.dr = 0.5 * fmin(g->src.w, g->src.h) * f.btn * appear;
+    f.dcx = sx + f.bx;  f.dcy = sy + f.by;
+    f.dL = f.att * 0.75 * f.dr * lgtl_ss(0.3 * f.dr, 2.2 * f.dr, bd);      // đuôi co lại khi hai bên hợp nhất
     return f;
 }
 
