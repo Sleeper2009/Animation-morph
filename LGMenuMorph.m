@@ -558,8 +558,11 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
 
     // icon của nút đi theo khối, trôi về phía nút theo bề cao (bản mẫu: -0,35 * (cao - cao nút); menu bung lên thì ngược lại)
     double dy = (_geom.ay ? 0.35 : -0.35) * fmax(0, f->rect.h - _src.size.height);
-    CGAffineTransform tr = CGAffineTransformMakeTranslation((CGFloat)(lgtl_cx(f->rect) - CGRectGetMidX(_src)),
-                                                            (CGFloat)(lgtl_cy(f->rect) - CGRectGetMidY(_src) + dy));
+    // pha mở: icon đi theo khối; pha đóng (pin = 1): icon đứng yên tại nút, nhỏ rồi phình ra khi khối nước chạm tới
+    double fx = 1 - f->pin;
+    CGAffineTransform tr = CGAffineTransformConcat(CGAffineTransformMakeScale((CGFloat)f->btn, (CGFloat)f->btn),
+        CGAffineTransformMakeTranslation((CGFloat)(fx * (lgtl_cx(f->rect) - CGRectGetMidX(_src))),
+                                         (CGFloat)(fx * (lgtl_cy(f->rect) - CGRectGetMidY(_src) + dy))));
     for (UIView *s in self.iconSnaps) {
         s.transform = tr;
         s.alpha = (CGFloat)f->dots;
