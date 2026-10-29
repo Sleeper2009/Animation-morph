@@ -11,6 +11,8 @@
 /// Hình dạng của khối kính: path theo toạ độ của hộp (gốc = góc trái-trên của hộp), đặt làm mặt nạ của MTMaterialView.
 /// Dùng mặt nạ thay vì cornerRadius vì hình có bốn góc bầu dục khác nhau (góc trên-phải giữ độ cong của nút).
 - (void)setShapePath:(CGPathRef)path;
+/// Nhiều hình hợp lại (hợp của các path, mỗi path là một CGPathRef bọc trong id bằng (__bridge id)); dùng cho khối nước + giọt nút lúc hút nhau.
+- (void)setShapePaths:(NSArray *)paths;
 @end
 
 /// Lấy hộp kính dùng lại (dựng một lần cho cả tiến trình). nil nếu không có MTMaterialView.
