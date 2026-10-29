@@ -19,7 +19,8 @@ Kiểu Morph / metaball cũ, kiểu Liquid, hiệu ứng nảy khi đóng và m�
 **Một khối kính duy nhất** vừa là nút "…" vừa là menu (không còn chấm / cầu nối metaball). Timeline nằm trong `LGTimeline.h`, giữ đúng bản mẫu:
 - **Mở**: bốn lò xo tắt dần (tâm x, tâm y, rộng, cao) từ khung nút tới khung menu, mỗi lò xo có "lực bắn" ban đầu nên menu **lao xuống rồi lắng lại**
   (ω = 14,2 / 19,5 / 17,0 / 16,4; ζ = 0,97 / 0,72 / 0,79 / 0,88). Lắng xong trong 0,6 s.
-- **Bo góc**: lúc đầu khối là bầu dục (như nút) với góc trên-phải giữ độ cong của nút (giọt nước), rồi co về bo góc cuối của menu thật (k: 1 → 0 trong ~0,4 s).
+- **Bo góc**: khối bắt đầu là viên thuốc tròn đều (hai đầu bán nguyệt, không nhọn), rồi co về bo góc cuối của menu thật (k: 1 → 0 trong ~0,4 s). Với menu ngắn / rộng, MỘT góc (góc neo) giữ độ cong của nút nên khối là giọt nước; **góc neo nằm theo vị trí nút** (nút trái-dưới → góc trái-dưới, nút phải-trên → góc phải-trên…). Với menu **dài** (cao ≳ 1,45 × rộng) bỏ hẳn góc neo: viên thuốc rồi bung ra, không nhọn ở góc nào (như iOS 26).
+  Khối luôn bám nút: quãng "bắn" của lò xo xa khỏi nút bị giới hạn mềm ~1,25 cạnh nút, nên menu dài không bị lơ lửng tách khỏi nút. Icon của nút trôi về phía nút (lên nếu menu bung xuống, xuống nếu bung lên).
   Bán kính bốn góc bị co theo luật CSS `border-radius` giống trình duyệt.
 - **Nội dung** là một khối nằm giữa khối kính: phóng 1,28 → 1, mờ → nét, nhạt → rõ trong 0,14 s; icon "…" của nút biến mất trong 40 ms và trôi lên theo bề cao khối.
 - **Đóng**: bảng 14 khung đo từ video (nội suy PCHIP): khối lao xuống lấy đà, co lại, **vọt qua nút ~14 px rồi lắng xuống** (thay cho hiệu ứng nảy cũ); 0,545 s (khoá `closeDur`).
