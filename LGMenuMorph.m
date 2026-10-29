@@ -477,12 +477,24 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
     // vòng cố định quanh nút: ẩn trong suốt phiên (lớp phủ tự vẽ lại đúng hình đó); ẩn TRƯỚC khi chụp icon
     // để ảnh chụp không dính vòng (có vòng thì phải chờ cập nhật màn hình mới chụp được trạng thái mới).
     BOOL hadRing = LGRingHide(self.sources, YES);
-    // icon các nút nguồn: chụp trước khi ẩn
+    // nút đang được nhấn thì bị làm mờ / sáng lên tạm: ảnh chụp phải là nút ở trạng thái BÌNH THƯỜNG (đúng như nút thật được trả lại lúc đóng xong),
+    // không thì lúc đóng icon nhìn nhạt rồi "nhảy" sang đen khi nút thật hiện lại.
+    BOOL prep = NO;
     for (UIView *v in self.sources) {
-        UIView *s = [v snapshotViewAfterScreenUpdates:hadRing];
+        BOOL pressed = [v isKindOfClass:UIControl.class] && ((UIControl *)v).highlighted;
+        if (pressed || (v.alpha > 0.001 && v.alpha < 0.999)) {
+            [v.layer removeAllAnimations];
+            if (pressed) ((UIControl *)v).highlighted = NO;
+            v.alpha = pressed || v.alpha < 0.05 ? 1.0 : v.alpha;
+            prep = YES;
+        }
+    }
+    // icon các nút nguồn: chụp trước khi ẩn. Icon nằm TRÊN CÙNG (trên kính, không bị mặt nạ khối cắt): khối nước luôn ở dưới nút.
+    for (UIView *v in self.sources) {
+        UIView *s = [v snapshotViewAfterScreenUpdates:(hadRing || prep)];
         if (s) {
             s.frame = CGRectOffset(LGWinRect(v), -_R.origin.x, -_R.origin.y);
-            [self.clip addSubview:s];
+            [self.reg addSubview:s];
             [self.iconSnaps addObject:s];
         }
     }
