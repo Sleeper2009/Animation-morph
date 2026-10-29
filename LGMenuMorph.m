@@ -275,8 +275,10 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
     _F = CGRectOffset(F0, pl.dx, pl.dy);
 
     double maxR = fmin(_F.size.width, _F.size.height) / 2;
-    // góc trên-phải giữ độ cong của nút (bản mẫu: 40 px trên nút 75 px)
-    _geom = (LGMorphGeom){ LGBoxOf(src), LGBoxOf(_F), LGCornerOf(body, container, maxR), fmin(src.size.width, src.size.height) / 2 * (40.0 / 37.5) };
+    // góc neo = góc menu trùng góc nút, theo vị trí nút (không cố định ở trên-phải); giữ độ cong của nút (bản mẫu: 40 px trên nút 75 px).
+    // Menu dài thì LGMorphRadii tự bỏ góc neo (viên thuốc -> bung ra, không góc nhọn nào).
+    _geom = (LGMorphGeom){ LGBoxOf(src), LGBoxOf(_F), LGCornerOf(body, container, maxR), fmin(src.size.width, src.size.height) / 2 * (40.0 / 37.5),
+                           pl.ax >= 0.5 ? 1 : 0, pl.ay >= 0.5 ? 1 : 0 };
     _off = (LGMorphOff){ 0, 0, 0, 0 };
 
     // nội dung
@@ -290,7 +292,7 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
     LGLog(@"BẮT ĐẦU container=%s body=%s content=%s", object_getClassName(container), object_getClassName(body), object_getClassName(content));
     LGLog(@"  nút/viên thuốc=%@ (%lu view)  menu=%@ -> dời (%+.1f,%+.1f) F=%@", NSStringFromCGRect(src), (unsigned long)srcs.count,
           NSStringFromCGRect(F0), pl.dx, pl.dy, NSStringFromCGRect(_F));
-    LGLog(@"  bo góc cuối=%.1f bo góc neo=%.1f mở=%.2f s đóng=%.3f s", _geom.R, _geom.rAnchor, LGMORPH_OPEN_DUR, LGP.closeDur);
+    LGLog(@"  bo góc cuối=%.1f bo góc neo=%.1f góc neo=(%d,%d) mở=%.2f s đóng=%.3f s", _geom.R, _geom.rAnchor, _geom.ax, _geom.ay, LGMORPH_OPEN_DUR, LGP.closeDur);
 
     [self computeRegion];
     [self buildOverlayFor:win];
@@ -554,8 +556,8 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
         self.snapBlur.alpha = (CGFloat)f->blur;
     }
 
-    // icon "…" của nút đi theo khối, trôi lên theo bề cao (bản mẫu: -0,35 * (cao - cao nút))
-    double dy = -0.35 * fmax(0, f->rect.h - _src.size.height);
+    // icon của nút đi theo khối, trôi về phía nút theo bề cao (bản mẫu: -0,35 * (cao - cao nút); menu bung lên thì ngược lại)
+    double dy = (_geom.ay ? 0.35 : -0.35) * fmax(0, f->rect.h - _src.size.height);
     CGAffineTransform tr = CGAffineTransformMakeTranslation((CGFloat)(lgtl_cx(f->rect) - CGRectGetMidX(_src)),
                                                             (CGFloat)(lgtl_cy(f->rect) - CGRectGetMidY(_src) + dy));
     for (UIView *s in self.iconSnaps) {
