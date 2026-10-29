@@ -570,11 +570,16 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
 
     // icon của nút đi theo khối, trôi về phía nút theo bề cao (bản mẫu: -0,35 * (cao - cao nút); menu bung lên thì ngược lại)
     double dy = (_geom.ay ? 0.35 : -0.35) * fmax(0, f->rect.h - _src.size.height);
-    // pha mở: icon đi theo khối; pha đóng (pin = 1): icon đứng yên tại nút, nhỏ rồi phình ra khi khối nước chạm tới
+    // pha mở: icon đi theo khối; pha đóng (pin = 1): icon đứng yên tại nút, nhỏ, méo như giọt nước kéo về phía khối nước (att, hướng ux/uy),
+    // rồi nảy phồng lên bằng lò xo khi hợp nhất (btn). Méo = giãn dọc theo hướng tới khối, co ngang.
     double fx = 1 - f->pin;
-    CGAffineTransform tr = CGAffineTransformConcat(CGAffineTransformMakeScale((CGFloat)f->btn, (CGFloat)f->btn),
-        CGAffineTransformMakeTranslation((CGFloat)(fx * (lgtl_cx(f->rect) - CGRectGetMidX(_src))),
-                                         (CGFloat)(fx * (lgtl_cy(f->rect) - CGRectGetMidY(_src) + dy))));
+    double sxs = f->btn * (1 + 0.34 * f->att), sys = f->btn * (1 - 0.16 * f->att);
+    double th = atan2(f->uy, f->ux);
+    CGAffineTransform tr = CGAffineTransformMakeRotation((CGFloat)-th);
+    tr = CGAffineTransformConcat(tr, CGAffineTransformMakeScale((CGFloat)sxs, (CGFloat)sys));
+    tr = CGAffineTransformConcat(tr, CGAffineTransformMakeRotation((CGFloat)th));
+    tr = CGAffineTransformConcat(tr, CGAffineTransformMakeTranslation((CGFloat)(fx * (lgtl_cx(f->rect) - CGRectGetMidX(_src)) + f->bx),
+                                                                      (CGFloat)(fx * (lgtl_cy(f->rect) - CGRectGetMidY(_src) + dy) + f->by)));
     for (UIView *s in self.iconSnaps) {
         s.transform = tr;
         s.alpha = (CGFloat)f->dots;
