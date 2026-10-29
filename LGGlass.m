@@ -34,7 +34,8 @@ static UIView *LGMakeMaterial(void) {
 
 @implementation LMGlassHost {
     UIView *_material;
-    CAShapeLayer *_mask;
+    CALayer *_maskRoot;                         // mặt nạ = hợp của các lớp hình con
+    NSMutableArray<CAShapeLayer *> *_parts;
 }
 - (UIView *)material { return _material; }
 
@@ -54,16 +55,31 @@ static UIView *LGMakeMaterial(void) {
 }
 
 - (void)setShapePath:(CGPathRef)path {
+    if (!path) return;
+    [self setShapePaths:@[ (__bridge id)path ]];
+}
+
+- (void)setShapePaths:(NSArray *)paths {
     if (!_material) return;
-    if (!_mask) {
-        _mask = [CAShapeLayer layer];
-        _mask.fillColor = UIColor.blackColor.CGColor;
-        _material.layer.mask = _mask;
+    if (!_maskRoot) {
+        _maskRoot = [CALayer layer];
+        _parts = [NSMutableArray new];
+        _material.layer.mask = _maskRoot;
     }
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
-    _mask.frame = self.bounds;
-    _mask.path = path;
+    _maskRoot.frame = self.bounds;
+    while (_parts.count < paths.count) {
+        CAShapeLayer *l = [CAShapeLayer layer];
+        l.fillColor = UIColor.blackColor.CGColor;
+        [_maskRoot addSublayer:l];
+        [_parts addObject:l];
+    }
+    for (NSUInteger i = 0; i < _parts.count; i++) {
+        CAShapeLayer *l = _parts[i];
+        l.frame = _maskRoot.bounds;
+        l.path = i < paths.count ? (__bridge CGPathRef)paths[i] : NULL;
+    }
     [CATransaction commit];
 }
 
@@ -72,7 +88,8 @@ static UIView *LGMakeMaterial(void) {
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
     _material.frame = self.bounds;
-    _mask.frame = self.bounds;
+    _maskRoot.frame = self.bounds;
+    for (CAShapeLayer *l in _parts) l.frame = _maskRoot.bounds;
     [CATransaction commit];
 }
 
