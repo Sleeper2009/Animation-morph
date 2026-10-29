@@ -140,6 +140,16 @@ static inline LGBox lgtl_no_overshoot(const LGMorphGeom *g, LGBox r) {
     return r;
 }
 
+// Pha đóng: khối nước bị hút tới nút nhưng nằm Ở PHÍA DƯỚI nút (phía menu), chỉ chạm nhẹ đầu nhọn vào nút, KHÔNG phủ lên nút. Mép khối phía nút không được
+// vượt qua (mép nút phía menu) - ov * cạnh nút; ov tăng 0,25 -> 1 khi khối "chui" vào nút (nút phình ra đón).
+static inline double lgtl_absorb(double t) { return 0.25 + 0.75 * lgtl_ss(0.28, 0.42, t); }
+static inline LGBox lgtl_below_button(const LGMorphGeom *g, LGBox r, double t) {
+    double ov = lgtl_absorb(t), cw = lgtl_ss(0.09, 0.17, t);     // cw: chỉ áp dụng khi khối đã nhỏ lại, menu to vừa rời đi thì không bị đẩy
+    if (!g->ay) { double lim = g->src.y + g->src.h * (1 - ov); if (r.y < lim) r.y = lgtl_lerp(r.y, lim, cw); }
+    else        { double lim = g->src.y + g->src.h * ov;       if (r.y + r.h > lim) r.y = lgtl_lerp(r.y, lim - r.h, cw); }
+    return r;
+}
+
 /// Khung hình pha MỞ tại t giây kể từ lúc menu hiện (0 .. LGMORPH_OPEN_DUR). t >= dur: đúng khung menu.
 static inline LGMorphFrame LGMorphOpen(const LGMorphGeom *g, double t) {
     LGMorphFrame f;
@@ -170,18 +180,18 @@ static inline LGMorphFrame LGMorphClose(const LGMorphGeom *g, LGMorphOff off, do
     LGMorphFrame f;
     double tc = lgtl_clamp(t, 0, LGMORPH_CLOSE_T);
     double u = 1 - lgtl_ss(0, 0.16, t);
-    f.pull = lgtl_ss(0.09, 0.17, t) * (1 - lgtl_ss(0.27, 0.35, t));
-    LGBox r = lgtl_no_overshoot(g, lgtl_attach(g, lgtl_mix_close(g, lgtl_pchip(LGCL_T, LGCL_CX, LGCLOSE_N, tc), lgtl_pchip(LGCL_T, LGCL_CY, LGCLOSE_N, tc),
-                                               lgtl_pchip(LGCL_T, LGCL_W, LGCLOSE_N, tc), lgtl_pchip(LGCL_T, LGCL_H, LGCLOSE_N, tc), f.pull)));
+    f.pull = lgtl_ss(0.09, 0.17, t) * (1 - lgtl_ss(0.30, 0.42, t));
+    LGBox r = lgtl_below_button(g, lgtl_no_overshoot(g, lgtl_attach(g, lgtl_mix_close(g, lgtl_pchip(LGCL_T, LGCL_CX, LGCLOSE_N, tc), lgtl_pchip(LGCL_T, LGCL_CY, LGCLOSE_N, tc),
+                                               lgtl_pchip(LGCL_T, LGCL_W, LGCLOSE_N, tc), lgtl_pchip(LGCL_T, LGCL_H, LGCLOSE_N, tc), f.pull))), t);
     f.rect = lgtl_box_cwh(lgtl_cx(r) + off.cx * u, lgtl_cy(r) + off.cy * u, r.w + off.w * u, r.h + off.h * u);
     f.k = lgtl_ss(0.02, 0.13, t);
     f.ca = 1 - lgtl_ss(0.02, 0.15, t);
     f.blur = 8.0 / 11.0 * lgtl_ss(0, 0.14, t);
     f.cs = 1 + 0.08 * lgtl_ss(0, 0.05, t);
-    // nút: hiện NHỎ (0,55) đứng yên tại chỗ lúc khối nước đang bị hút tới; khối chạm tới thì nút phình ra (nhún nhẹ) về cỡ thật
+    // nút: hiện NHỎ (0,72) đứng yên tại chỗ lúc khối nước đang bị hút tới; khối chạm tới thì nút phình ra (nhún nhẹ) về cỡ thật
     f.pin = 1;
-    f.dots = lgtl_ss(0.07, 0.15, t);
-    f.btn = 0.55 + 0.45 * lgtl_ss(0.22, 0.38, t) + 0.07 * sin(M_PI * lgtl_ss(0.30, 0.50, t));
+    f.dots = lgtl_ss(0.05, 0.12, t);
+    f.btn = 0.72 + 0.28 * lgtl_ss(0.30, 0.47, t) + 0.025 * sin(M_PI * lgtl_ss(0.38, 0.54, t));
     double s = lgtl_ss(0, 0.04, t) * (1 - lgtl_ss(0.3, 0.5, t));
     f.alpha = lgtl_lerp(1, 0.667, s);
     return f;
