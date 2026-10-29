@@ -4,12 +4,12 @@
 // Một khối kính duy nhất vừa là nút "…" vừa là menu (không còn chấm / metaball như bản cũ):
 //   MỞ    = 4 lò xo tắt dần (tâm x, tâm y, rộng, cao) từ khung nút tới khung menu, mỗi lò xo có "lực bắn" ban đầu
 //           (menu lao xuống rồi mới lắng lại). Giải tích nên ổn định ở mọi bước thời gian.
-//   ĐÓNG  = bảng khung đo trực tiếp từ video, nội suy PCHIP: hình lao xuống (lấy đà), co lại, vọt qua nút rồi lắng xuống.
-//           Bắt đầu từ khung hình hiện tại (đóng khi đang mở dở): độ lệch so với menu tắt dần trong 0,16 s.
+//   ĐÓNG  = MỘT chuyển động liền mạch: khối thu nhỏ dần và trượt XÉO theo đường thẳng từ tâm menu tới tâm nút (kích thước lấy từ bảng khung đo của bản mẫu,
+//           nội suy PCHIP). Khi tới gần nhau, khối nước và nút bị méo về phía nhau như hút nhau (giọt nước), hợp nhất, rồi nút nảy phồng lên bằng
+//           lò xo tắt dần (nhún quá cỡ thật rồi lắng). Bắt đầu từ khung hình hiện tại (đóng khi đang mở dở): độ lệch so với menu tắt dần trong 0,16 s.
 //   bo góc = VIÊN THUỐC tròn đều (bán kính = nửa cạnh ngắn, hai đầu bán nguyệt) -> bo góc cuối. Menu ngắn / rộng: một góc (góc neo, phía nút)
 //           giữ độ cong của nút nên khối là "giọt nước"; menu DÀI: bỏ góc neo, khối là viên thuốc rồi bung ra, không nhọn ở góc nào.
 //   góc neo = góc của menu trùng với góc của nút (theo vị trí nút trên màn hình: trên/dưới, trái/phải), không cố định ở trên-phải.
-//   bám nút = khối không được tách khỏi nút quá ~1,25 cạnh nút trong lúc lò xo "bắn" (menu dài thì quãng bắn lớn hơn nhiều).
 //
 // Bản mẫu làm việc theo toạ độ px của khung đo; ở đây mọi đại lượng được CHUẨN HOÁ theo quãng đường nút -> menu
 // (q = 0 tại nút, q = 1 tại menu) nên dùng được cho bất kỳ vị trí / kích thước nút và menu nào.
@@ -43,6 +43,9 @@ typedef struct {
     double pull;        // 0..1: mức khối bị HÚT méo về phía nút (pha đóng): góc neo thót lại, thân hơi dài ra -> hình quả trứng / giọt nước méo
     double btn;         // cỡ icon của nút (1 = bình thường): lúc đóng nút nhỏ, chờ khối nước chạm tới thì phình ra
     double pin;         // 0 = icon đi theo khối (pha mở), 1 = icon đứng yên tại nút (pha đóng)
+    double att;         // 0..1: mức nút và khối nước hút nhau (nút méo như giọt nước kéo về phía khối)
+    double ux, uy;      // hướng đơn vị từ nút tới khối nước
+    double bx, by;      // độ nghiêng của nút về phía khối nước (pt)
 } LGMorphFrame;
 
 // Bán kính 4 góc (elip) sau khi áp luật CSS border-radius
@@ -106,66 +109,37 @@ static inline LGBox lgtl_mix(const LGMorphGeom *g, double qcx, double qcy, doubl
     return lgtl_box_cwh(sx + qcx * (dx - sx), sy + qcy * (dy - sy), g->src.w + qw * (g->dst.w - g->src.w), g->src.h + qh * (g->dst.h - g->src.h));
 }
 
-// Khối pha ĐÓNG: kích thước theo q = trung bình hai trục của bảng khung, nhưng TỈ LỆ CẠNH đi từ tỉ lệ của nút (tròn) lúc nhỏ tới tỉ lệ của menu lúc lớn.
-// Bảng khung gốc (bản mẫu) để chiều cao co chậm hơn chiều rộng nên cuối pha đóng khối thành bầu dục dọc hẹp rồi mới về nút -> nút tròn mà khối thu lại thành bầu dục
-// trông sai. Ở đây khối thu về hình TRÒN (giọt nước) cỡ nút, lớn dần mới giãn ra theo tỉ lệ menu.
-static inline LGBox lgtl_mix_close(const LGMorphGeom *g, double qcx, double qcy, double qw, double qh, double pull) {
+// Khối pha ĐÓNG: kích thước theo q (trung bình hai trục của bảng khung, nhấn nhỏ lại bằng luỹ thừa 1,25 để lúc tới gần nút khối đã nhỏ), TỈ LỆ CẠNH đi từ tỉ lệ
+// của nút (tròn) lúc nhỏ tới tỉ lệ của menu lúc lớn; TÂM đi thẳng trên đường chéo từ tâm menu tới tâm nút (cùng một tiến độ qc cho x và y,
+// không còn cú lao xuống rồi hất lên của bảng đo gốc).
+static inline LGBox lgtl_mix_close(const LGMorphGeom *g, double qc, double qs, double pull) {
     double sx = lgtl_cx(g->src), sy = lgtl_cy(g->src), dx = lgtl_cx(g->dst), dy = lgtl_cy(g->dst);
-    double q = fmax(0.5 * (qw + qh), -0.02);
+    double q = pow(fmax(qs, 0), 1.25);
     double As = g->src.w > 1 ? g->src.h / g->src.w : 1, A = g->dst.w > 1 ? g->dst.h / g->dst.w : 1;
     double asp = lgtl_lerp(As, A, lgtl_ss(0.30, 0.85, q)) * (1 + 0.20 * pull);   // bị hút thì thân dài ra theo hướng nút (quả trứng)
+    double fin = lgtl_lerp(0.82, 1, lgtl_ss(0.0, 0.25, q));                       // tới nút khối còn nhỏ hơn nút một chút
     double w, h;
-    if (A >= 1) { w = g->src.w + q * (g->dst.w - g->src.w); h = w * asp; }          // menu cao: bề rộng dẫn, bề cao theo tỉ lệ
-    else        { h = g->src.h + q * (g->dst.h - g->src.h); w = h / asp; }          // menu rộng: bề cao dẫn
-    return lgtl_box_cwh(sx + qcx * (dx - sx), sy + qcy * (dy - sy), w, h);
-}
-
-// Giữ khối BÁM vào nút: quãng khối rơi xa khỏi cạnh neo của nút (mép trên nút nếu menu bung xuống, mép dưới nếu bung lên; mép phải / trái tương tự)
-// vượt 1,25 cạnh nút thì phần vượt chỉ còn 30% (mềm, không bị khựng). Menu càng dài lò xo "bắn" càng xa -> không có chặn này khối sẽ lơ lửng tách khỏi nút.
-static inline double lgtl_softcap(double gap, double c0) { return gap <= c0 ? gap : c0 + (gap - c0) * 0.3; }
-static inline LGBox lgtl_attach(const LGMorphGeom *g, LGBox r) {
-    double ch = g->src.h * 1.25, cw = g->src.w * 1.25;
-    if (!g->ay) { double gap = r.y - g->src.y; if (gap > ch) r.y = g->src.y + lgtl_softcap(gap, ch); }
-    else { double gap = (g->src.y + g->src.h) - (r.y + r.h); if (gap > ch) r.y += gap - lgtl_softcap(gap, ch); }
-    if (!g->ax) { double gap = r.x - g->src.x; if (gap > cw) r.x = g->src.x + lgtl_softcap(gap, cw); }
-    else { double gap = (g->src.x + g->src.w) - (r.x + r.w); if (gap > cw) r.x += gap - lgtl_softcap(gap, cw); }
-    return r;
-}
-
-// Pha đóng: khối nước bị hút VÀO nút, không được trồi ra quá mép nút phía neo (bảng khung gốc cho cy "vọt" qua nút) quá 12% cạnh nút.
-static inline LGBox lgtl_no_overshoot(const LGMorphGeom *g, LGBox r) {
-    double ox = 0.12 * g->src.w, oy = 0.12 * g->src.h;
-    if (!g->ay) { if (r.y < g->src.y - oy) r.y = g->src.y - oy; } else if (r.y + r.h > g->src.y + g->src.h + oy) r.y = g->src.y + g->src.h + oy - r.h;
-    if (g->ax)  { if (r.x + r.w > g->src.x + g->src.w + ox) r.x = g->src.x + g->src.w + ox - r.w; } else if (r.x < g->src.x - ox) r.x = g->src.x - ox;
-    return r;
-}
-
-// Pha đóng: khối nước bị hút tới nút nhưng nằm Ở PHÍA DƯỚI nút (phía menu), chỉ chạm nhẹ đầu nhọn vào nút, KHÔNG phủ lên nút. Mép khối phía nút không được
-// vượt qua (mép nút phía menu) - ov * cạnh nút; ov tăng 0,25 -> 1 khi khối "chui" vào nút (nút phình ra đón).
-static inline double lgtl_absorb(double t) { return 0.25 + 0.75 * lgtl_ss(0.28, 0.42, t); }
-static inline LGBox lgtl_below_button(const LGMorphGeom *g, LGBox r, double t) {
-    double ov = lgtl_absorb(t), cw = lgtl_ss(0.09, 0.17, t);     // cw: chỉ áp dụng khi khối đã nhỏ lại, menu to vừa rời đi thì không bị đẩy
-    if (!g->ay) { double lim = g->src.y + g->src.h * (1 - ov); if (r.y < lim) r.y = lgtl_lerp(r.y, lim, cw); }
-    else        { double lim = g->src.y + g->src.h * ov;       if (r.y + r.h > lim) r.y = lgtl_lerp(r.y, lim - r.h, cw); }
-    return r;
+    if (A >= 1) { w = (g->src.w + q * (g->dst.w - g->src.w)) * fin; h = w * asp; }
+    else        { h = (g->src.h + q * (g->dst.h - g->src.h)) * fin; w = h / asp; }
+    return lgtl_box_cwh(sx + qc * (dx - sx), sy + qc * (dy - sy), w, h);
 }
 
 /// Khung hình pha MỞ tại t giây kể từ lúc menu hiện (0 .. LGMORPH_OPEN_DUR). t >= dur: đúng khung menu.
 static inline LGMorphFrame LGMorphOpen(const LGMorphGeom *g, double t) {
     LGMorphFrame f;
     if (t >= LGMORPH_OPEN_DUR) {
-        f.rect = g->dst; f.k = 0; f.cs = 1; f.blur = 0; f.ca = 1; f.dots = 0; f.alpha = 1; f.pull = 0; f.btn = 1; f.pin = 0;
+        f.rect = g->dst; f.k = 0; f.cs = 1; f.blur = 0; f.ca = 1; f.dots = 0; f.alpha = 1; f.pull = 0; f.btn = 1; f.pin = 0; f.att = 0; f.ux = f.uy = f.bx = f.by = 0;
         return f;
     }
     if (t < 0) t = 0;
     // lò xo cho p = 1 tại nút -> 0 tại menu; lgtl_mix dùng q = 0 tại nút -> 1 tại menu, nên q = 1 - p
-    f.rect = lgtl_attach(g, lgtl_mix(g, 1 - lgtl_spring(&LGSP_CX, t), 1 - lgtl_spring(&LGSP_CY, t), 1 - lgtl_spring(&LGSP_W, t), 1 - lgtl_spring(&LGSP_H, t)));
+    f.rect = lgtl_mix(g, 1 - lgtl_spring(&LGSP_CX, t), 1 - lgtl_spring(&LGSP_CY, t), 1 - lgtl_spring(&LGSP_W, t), 1 - lgtl_spring(&LGSP_H, t));   // lò xo nguyên bản (nảy đàn hồi)
     f.k = (1 - lgtl_ss(0.08, 0.20, t)) * 0.9 + 0.1 * (1 - lgtl_ss(0.2, 0.4, t));
     f.cs = 1 + 0.28 * (1 - lgtl_ss(0.10, 0.24, t));
     f.blur = (1 - lgtl_ss(0.02, 0.20, t));
     f.ca = lgtl_ss(0, 0.14, t);
     f.dots = 1 - lgtl_ss(0, 0.04, t);
-    f.alpha = 1; f.pull = 0; f.btn = 1; f.pin = 0;
+    f.alpha = 1; f.pull = 0; f.btn = 1; f.pin = 0; f.att = 0; f.ux = f.uy = f.bx = f.by = 0;
     return f;
 }
 
@@ -176,24 +150,39 @@ static inline LGMorphOff LGMorphOffsetFrom(const LGMorphGeom *g, LGBox cur) {
 }
 
 /// Khung hình pha ĐÓNG tại t giây (đã nhân tốc độ) kể từ lúc bắt đầu đóng; off = LGMorphOffsetFrom (0 nếu đóng từ menu đã mở xong).
+#define LGCLOSE_MERGE 0.255      // thời điểm khối nước và nút hợp nhất (sau đó nút nảy lò xo)
 static inline LGMorphFrame LGMorphClose(const LGMorphGeom *g, LGMorphOff off, double t) {
     LGMorphFrame f;
     double tc = lgtl_clamp(t, 0, LGMORPH_CLOSE_T);
     double u = 1 - lgtl_ss(0, 0.16, t);
-    f.pull = lgtl_ss(0.09, 0.17, t) * (1 - lgtl_ss(0.30, 0.42, t));
-    LGBox r = lgtl_below_button(g, lgtl_no_overshoot(g, lgtl_attach(g, lgtl_mix_close(g, lgtl_pchip(LGCL_T, LGCL_CX, LGCLOSE_N, tc), lgtl_pchip(LGCL_T, LGCL_CY, LGCLOSE_N, tc),
-                                               lgtl_pchip(LGCL_T, LGCL_W, LGCLOSE_N, tc), lgtl_pchip(LGCL_T, LGCL_H, LGCLOSE_N, tc), f.pull))), t);
+    double qc = lgtl_clamp(lgtl_pchip(LGCL_T, LGCL_CX, LGCLOSE_N, tc), 0, 1.2);
+    double qs = 0.5 * (lgtl_pchip(LGCL_T, LGCL_W, LGCLOSE_N, tc) + lgtl_pchip(LGCL_T, LGCL_H, LGCLOSE_N, tc));
+    // hút nhau: khoảng cách tâm so với tổng bán kính; càng gần càng méo, hợp nhất rồi thả dần
+    double qpull = 1 - lgtl_ss(0.30, 0.38, t);
+    LGBox r0 = lgtl_mix_close(g, qc, qs, 0);
+    double sx = lgtl_cx(g->src), sy = lgtl_cy(g->src);
+    double ddx = lgtl_cx(r0) - sx, ddy = lgtl_cy(r0) - sy, d = sqrt(ddx * ddx + ddy * ddy);
+    double gap = d - 0.25 * (r0.w + r0.h) - 0.31 * g->src.w;           // khe hở giữa mép khối nước và mép nút
+    double near = 1 - lgtl_ss(0.1 * g->src.w, 2.6 * g->src.w, gap);
+    f.att = near * qpull * lgtl_ss(0.05, 0.17, t);
+    f.pull = f.att;
+    LGBox r = lgtl_mix_close(g, qc, qs, f.pull);
     f.rect = lgtl_box_cwh(lgtl_cx(r) + off.cx * u, lgtl_cy(r) + off.cy * u, r.w + off.w * u, r.h + off.h * u);
     f.k = lgtl_ss(0.02, 0.13, t);
     f.ca = 1 - lgtl_ss(0.02, 0.15, t);
     f.blur = 8.0 / 11.0 * lgtl_ss(0, 0.14, t);
     f.cs = 1 + 0.08 * lgtl_ss(0, 0.05, t);
-    // nút: hiện NHỎ (0,72) đứng yên tại chỗ lúc khối nước đang bị hút tới; khối chạm tới thì nút phình ra (nhún nhẹ) về cỡ thật
+    // nút: hiện NHỎ (0,62) đứng yên tại chỗ; lúc khối nước tới gần thì méo / nghiêng về phía khối (hút nhau); hợp nhất thì nảy phồng lên bằng lò xo tắt dần
     f.pin = 1;
-    f.dots = lgtl_ss(0.05, 0.12, t);
-    f.btn = 0.72 + 0.28 * lgtl_ss(0.30, 0.47, t) + 0.025 * sin(M_PI * lgtl_ss(0.38, 0.54, t));
-    double s = lgtl_ss(0, 0.04, t) * (1 - lgtl_ss(0.3, 0.5, t));
-    f.alpha = lgtl_lerp(1, 0.667, s);
+    f.dots = lgtl_ss(0.03, 0.09, t);
+    double ex = lgtl_cx(f.rect) - sx, ey = lgtl_cy(f.rect) - sy, ed = sqrt(ex * ex + ey * ey);
+    f.ux = ed > 1e-3 ? ex / ed : 0;  f.uy = ed > 1e-3 ? ey / ed : 0;
+    f.bx = f.ux * f.att * 0.16 * g->src.w;  f.by = f.uy * f.att * 0.16 * g->src.h;
+    double tau = t - LGCLOSE_MERGE, z = 0.45, w = 28.0, wd = w * sqrt(1 - z * z);
+    double spr = tau <= 0 ? 0 : 1 - exp(-z * w * tau) * (cos(wd * tau) + (z * w / wd) * sin(wd * tau));
+    f.btn = 0.62 + 0.38 * spr;
+    // khối kính hoà vào nút lúc hợp nhất (nút tự có nền kính riêng)
+    f.alpha = 1 - lgtl_ss(LGCLOSE_MERGE - 0.015, LGCLOSE_MERGE + 0.05, t);
     return f;
 }
 
