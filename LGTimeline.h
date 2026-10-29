@@ -40,6 +40,9 @@ typedef struct {
     double ca;          // độ rõ nội dung 0..1
     double dots;        // độ rõ icon "…" của nút 0..1
     double alpha;       // độ đặc của khối kính (1; hạ xuống 0,667 ở cuối pha đóng để hoà vào nút thật)
+    double pull;        // 0..1: mức khối bị HÚT méo về phía nút (pha đóng): góc neo thót lại, thân hơi dài ra -> hình quả trứng / giọt nước méo
+    double btn;         // cỡ icon của nút (1 = bình thường): lúc đóng nút nhỏ, chờ khối nước chạm tới thì phình ra
+    double pin;         // 0 = icon đi theo khối (pha mở), 1 = icon đứng yên tại nút (pha đóng)
 } LGMorphFrame;
 
 // Bán kính 4 góc (elip) sau khi áp luật CSS border-radius
@@ -103,6 +106,20 @@ static inline LGBox lgtl_mix(const LGMorphGeom *g, double qcx, double qcy, doubl
     return lgtl_box_cwh(sx + qcx * (dx - sx), sy + qcy * (dy - sy), g->src.w + qw * (g->dst.w - g->src.w), g->src.h + qh * (g->dst.h - g->src.h));
 }
 
+// Khối pha ĐÓNG: kích thước theo q = trung bình hai trục của bảng khung, nhưng TỈ LỆ CẠNH đi từ tỉ lệ của nút (tròn) lúc nhỏ tới tỉ lệ của menu lúc lớn.
+// Bảng khung gốc (bản mẫu) để chiều cao co chậm hơn chiều rộng nên cuối pha đóng khối thành bầu dục dọc hẹp rồi mới về nút -> nút tròn mà khối thu lại thành bầu dục
+// trông sai. Ở đây khối thu về hình TRÒN (giọt nước) cỡ nút, lớn dần mới giãn ra theo tỉ lệ menu.
+static inline LGBox lgtl_mix_close(const LGMorphGeom *g, double qcx, double qcy, double qw, double qh, double pull) {
+    double sx = lgtl_cx(g->src), sy = lgtl_cy(g->src), dx = lgtl_cx(g->dst), dy = lgtl_cy(g->dst);
+    double q = fmax(0.5 * (qw + qh), -0.02);
+    double As = g->src.w > 1 ? g->src.h / g->src.w : 1, A = g->dst.w > 1 ? g->dst.h / g->dst.w : 1;
+    double asp = lgtl_lerp(As, A, lgtl_ss(0.30, 0.85, q)) * (1 + 0.20 * pull);   // bị hút thì thân dài ra theo hướng nút (quả trứng)
+    double w, h;
+    if (A >= 1) { w = g->src.w + q * (g->dst.w - g->src.w); h = w * asp; }          // menu cao: bề rộng dẫn, bề cao theo tỉ lệ
+    else        { h = g->src.h + q * (g->dst.h - g->src.h); w = h / asp; }          // menu rộng: bề cao dẫn
+    return lgtl_box_cwh(sx + qcx * (dx - sx), sy + qcy * (dy - sy), w, h);
+}
+
 // Giữ khối BÁM vào nút: quãng khối rơi xa khỏi cạnh neo của nút (mép trên nút nếu menu bung xuống, mép dưới nếu bung lên; mép phải / trái tương tự)
 // vượt 1,25 cạnh nút thì phần vượt chỉ còn 30% (mềm, không bị khựng). Menu càng dài lò xo "bắn" càng xa -> không có chặn này khối sẽ lơ lửng tách khỏi nút.
 static inline double lgtl_softcap(double gap, double c0) { return gap <= c0 ? gap : c0 + (gap - c0) * 0.3; }
@@ -115,11 +132,19 @@ static inline LGBox lgtl_attach(const LGMorphGeom *g, LGBox r) {
     return r;
 }
 
+// Pha đóng: khối nước bị hút VÀO nút, không được trồi ra quá mép nút phía neo (bảng khung gốc cho cy "vọt" qua nút) quá 12% cạnh nút.
+static inline LGBox lgtl_no_overshoot(const LGMorphGeom *g, LGBox r) {
+    double ox = 0.12 * g->src.w, oy = 0.12 * g->src.h;
+    if (!g->ay) { if (r.y < g->src.y - oy) r.y = g->src.y - oy; } else if (r.y + r.h > g->src.y + g->src.h + oy) r.y = g->src.y + g->src.h + oy - r.h;
+    if (g->ax)  { if (r.x + r.w > g->src.x + g->src.w + ox) r.x = g->src.x + g->src.w + ox - r.w; } else if (r.x < g->src.x - ox) r.x = g->src.x - ox;
+    return r;
+}
+
 /// Khung hình pha MỞ tại t giây kể từ lúc menu hiện (0 .. LGMORPH_OPEN_DUR). t >= dur: đúng khung menu.
 static inline LGMorphFrame LGMorphOpen(const LGMorphGeom *g, double t) {
     LGMorphFrame f;
     if (t >= LGMORPH_OPEN_DUR) {
-        f.rect = g->dst; f.k = 0; f.cs = 1; f.blur = 0; f.ca = 1; f.dots = 0; f.alpha = 1;
+        f.rect = g->dst; f.k = 0; f.cs = 1; f.blur = 0; f.ca = 1; f.dots = 0; f.alpha = 1; f.pull = 0; f.btn = 1; f.pin = 0;
         return f;
     }
     if (t < 0) t = 0;
@@ -130,7 +155,7 @@ static inline LGMorphFrame LGMorphOpen(const LGMorphGeom *g, double t) {
     f.blur = (1 - lgtl_ss(0.02, 0.20, t));
     f.ca = lgtl_ss(0, 0.14, t);
     f.dots = 1 - lgtl_ss(0, 0.04, t);
-    f.alpha = 1;
+    f.alpha = 1; f.pull = 0; f.btn = 1; f.pin = 0;
     return f;
 }
 
@@ -145,14 +170,18 @@ static inline LGMorphFrame LGMorphClose(const LGMorphGeom *g, LGMorphOff off, do
     LGMorphFrame f;
     double tc = lgtl_clamp(t, 0, LGMORPH_CLOSE_T);
     double u = 1 - lgtl_ss(0, 0.16, t);
-    LGBox r = lgtl_attach(g, lgtl_mix(g, lgtl_pchip(LGCL_T, LGCL_CX, LGCLOSE_N, tc), lgtl_pchip(LGCL_T, LGCL_CY, LGCLOSE_N, tc),
-                                         lgtl_pchip(LGCL_T, LGCL_W, LGCLOSE_N, tc), lgtl_pchip(LGCL_T, LGCL_H, LGCLOSE_N, tc)));
+    f.pull = lgtl_ss(0.09, 0.17, t) * (1 - lgtl_ss(0.27, 0.35, t));
+    LGBox r = lgtl_no_overshoot(g, lgtl_attach(g, lgtl_mix_close(g, lgtl_pchip(LGCL_T, LGCL_CX, LGCLOSE_N, tc), lgtl_pchip(LGCL_T, LGCL_CY, LGCLOSE_N, tc),
+                                               lgtl_pchip(LGCL_T, LGCL_W, LGCLOSE_N, tc), lgtl_pchip(LGCL_T, LGCL_H, LGCLOSE_N, tc), f.pull)));
     f.rect = lgtl_box_cwh(lgtl_cx(r) + off.cx * u, lgtl_cy(r) + off.cy * u, r.w + off.w * u, r.h + off.h * u);
     f.k = lgtl_ss(0.02, 0.13, t);
     f.ca = 1 - lgtl_ss(0.02, 0.15, t);
     f.blur = 8.0 / 11.0 * lgtl_ss(0, 0.14, t);
     f.cs = 1 + 0.08 * lgtl_ss(0, 0.05, t);
-    f.dots = lgtl_ss(0.16, 0.24, t);
+    // nút: hiện NHỎ (0,55) đứng yên tại chỗ lúc khối nước đang bị hút tới; khối chạm tới thì nút phình ra (nhún nhẹ) về cỡ thật
+    f.pin = 1;
+    f.dots = lgtl_ss(0.07, 0.15, t);
+    f.btn = 0.55 + 0.45 * lgtl_ss(0.22, 0.38, t) + 0.07 * sin(M_PI * lgtl_ss(0.30, 0.50, t));
     double s = lgtl_ss(0, 0.04, t) * (1 - lgtl_ss(0.3, 0.5, t));
     f.alpha = lgtl_lerp(1, 0.667, s);
     return f;
@@ -166,7 +195,9 @@ static inline LGRadii LGMorphRadii(const LGMorphGeom *g, const LGMorphFrame *f) 
     double rb = fmin(lgtl_lerp(g->R, rcap, f->k), rcap);
     double ra = fmin(lgtl_lerp(g->R, lgtl_lerp(rcap, fmin(g->rAnchor, rcap), a), f->k), rcap);
     double c[4] = { rb, rb, rb, rb };          // TL, TR, BR, BL
-    c[g->ay ? (g->ax ? 2 : 3) : (g->ax ? 1 : 0)] = ra;
+    int ai = g->ay ? (g->ax ? 2 : 3) : (g->ax ? 1 : 0);
+    c[ai] = fmin(ra, rcap * (1 - 0.58 * f->pull));     // bị hút: góc phía nút thót lại, các góc còn lại vẫn tròn đầy
+    if (f->pull <= 0) c[ai] = ra;
     LGRadii r = { c[0], c[0], c[1], c[1], c[2], c[2], c[3], c[3] };
     double s = 1;
     if (r.tlx + r.trx > w && r.tlx + r.trx > 0) s = fmin(s, w / (r.tlx + r.trx));
