@@ -115,6 +115,20 @@ static inline LGBox lgtl_attach(const LGMorphGeom *g, LGBox r) {
     return r;
 }
 
+// Pha ĐÓNG: độ "vọt qua nút" của bảng đo tỉ lệ theo quãng nút -> menu, nên menu càng dài khối càng hất lên mạnh (menu 560 pt: ~35 pt).
+// Ở đây độ vọt (khoảng khối nhô ra khỏi mép nút phía neo, theo từng trục) được nén mềm bằng tanh về tối đa ~0,18 cạnh nút: vọt nhỏ giữ gần như nguyên,
+// vọt lớn bão hoà -> menu ngắn ~15 pt, menu dài cũng chỉ ~8 pt (nút 44 pt), không còn phụ thuộc độ dài menu.
+#define LGCLOSE_OVER 0.18
+static inline double lgtl_soft_over(double over, double lim) { return over <= 0 ? over : lim * tanh(over / lim); }
+static inline LGBox lgtl_limit_over(const LGMorphGeom *g, LGBox r) {
+    double lim = LGCLOSE_OVER * fmin(g->src.w, g->src.h), over;
+    if (!g->ay) { over = g->src.y - r.y; if (over > 0) r.y = g->src.y - lgtl_soft_over(over, lim); }
+    else { over = (r.y + r.h) - (g->src.y + g->src.h); if (over > 0) r.y = g->src.y + g->src.h + lgtl_soft_over(over, lim) - r.h; }
+    if (!g->ax) { over = g->src.x - r.x; if (over > 0) r.x = g->src.x - lgtl_soft_over(over, lim); }
+    else { over = (r.x + r.w) - (g->src.x + g->src.w); if (over > 0) r.x = g->src.x + g->src.w + lgtl_soft_over(over, lim) - r.w; }
+    return r;
+}
+
 /// Khung hình pha MỞ tại t giây kể từ lúc menu hiện (0 .. LGMORPH_OPEN_DUR). t >= dur: đúng khung menu.
 static inline LGMorphFrame LGMorphOpen(const LGMorphGeom *g, double t) {
     LGMorphFrame f;
@@ -145,8 +159,8 @@ static inline LGMorphFrame LGMorphClose(const LGMorphGeom *g, LGMorphOff off, do
     LGMorphFrame f;
     double tc = lgtl_clamp(t, 0, LGMORPH_CLOSE_T);
     double u = 1 - lgtl_ss(0, 0.16, t);
-    LGBox r = lgtl_attach(g, lgtl_mix(g, lgtl_pchip(LGCL_T, LGCL_CX, LGCLOSE_N, tc), lgtl_pchip(LGCL_T, LGCL_CY, LGCLOSE_N, tc),
-                                         lgtl_pchip(LGCL_T, LGCL_W, LGCLOSE_N, tc), lgtl_pchip(LGCL_T, LGCL_H, LGCLOSE_N, tc)));
+    LGBox r = lgtl_limit_over(g, lgtl_attach(g, lgtl_mix(g, lgtl_pchip(LGCL_T, LGCL_CX, LGCLOSE_N, tc), lgtl_pchip(LGCL_T, LGCL_CY, LGCLOSE_N, tc),
+                                         lgtl_pchip(LGCL_T, LGCL_W, LGCLOSE_N, tc), lgtl_pchip(LGCL_T, LGCL_H, LGCLOSE_N, tc))));
     f.rect = lgtl_box_cwh(lgtl_cx(r) + off.cx * u, lgtl_cy(r) + off.cy * u, r.w + off.w * u, r.h + off.h * u);
     f.k = lgtl_ss(0.02, 0.13, t);
     f.ca = 1 - lgtl_ss(0.02, 0.15, t);
