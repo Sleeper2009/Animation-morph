@@ -1,6 +1,6 @@
 Package: com.fujb-2009.liquidmenu
 Name: LiquidMenu
-Version: 0.0.2-test
+Version: 0.0.3-test
 Architecture: iphoneos-arm64
 Description: Thêm Animation vào các nút
 Maintainer: fujb
