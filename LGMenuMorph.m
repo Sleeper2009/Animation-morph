@@ -170,33 +170,6 @@ static CGPathRef LGMorphPath(const LGMorphGeom *g, const LGMorphFrame *f, CGPoin
     return p;
 }
 
-// Giọt nước của nút lúc hút nhau với khối nước: vòng tròn (tâm c, bán kính r) + đuôi chĩa theo (ux, uy), đỉnh đuôi cách tâm r + L, đỉnh được bo tròn.
-// o = gốc toạ độ của path. Người gọi phải CGPathRelease.
-static CGPathRef LGDropPath(const LGMorphFrame *f, CGPoint o) {
-    CGMutablePathRef p = CGPathCreateMutable();
-    double r = f->dr, L = f->dL, cx = f->dcx - o.x, cy = f->dcy - o.y;
-    if (r < 0.5) return p;
-    if (L < 0.3) { CGPathAddEllipseInRect(p, NULL, CGRectMake(cx - r, cy - r, 2 * r, 2 * r)); return p; }
-    double th = atan2(f->uy, f->ux), D = r + L, be = acos(fmin(r / D, 1));
-    double a0 = th + be, a1 = th - be + 2 * M_PI;
-    const int N = 48;
-    for (int i = 0; i <= N; i++) {
-        double a = a0 + (a1 - a0) * i / N;
-        CGPoint q = CGPointMake((CGFloat)(cx + r * cos(a)), (CGFloat)(cy + r * sin(a)));
-        if (i == 0) CGPathMoveToPoint(p, NULL, q.x, q.y); else CGPathAddLineToPoint(p, NULL, q.x, q.y);
-    }
-    CGPoint P1 = CGPointMake((CGFloat)(cx + r * cos(a0)), (CGFloat)(cy + r * sin(a0)));      // điểm tiếp xúc phía trước
-    CGPoint P2 = CGPointMake((CGFloat)(cx + r * cos(a1)), (CGFloat)(cy + r * sin(a1)));      // điểm tiếp xúc phía sau (cuối vòng cung)
-    CGPoint T = CGPointMake((CGFloat)(cx + D * cos(th)), (CGFloat)(cy + D * sin(th)));       // đỉnh đuôi
-    const CGFloat k = 0.78;                                                                  // dừng ở 78% đường tới đỉnh rồi bo tròn đỉnh
-    CGPoint A = CGPointMake(P2.x + (T.x - P2.x) * k, P2.y + (T.y - P2.y) * k);
-    CGPoint B = CGPointMake(P1.x + (T.x - P1.x) * k, P1.y + (T.y - P1.y) * k);
-    CGPathAddLineToPoint(p, NULL, A.x, A.y);
-    CGPathAddQuadCurveToPoint(p, NULL, T.x, T.y, B.x, B.y);
-    CGPathCloseSubpath(p);
-    return p;
-}
-
 // ------------------------------------------------------------------ phiên
 typedef NS_ENUM(NSInteger, LGState) { LGStOpening, LGStOpen, LGStClosing, LGStSettling, LGStDone };
 
@@ -504,24 +477,12 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
     // vòng cố định quanh nút: ẩn trong suốt phiên (lớp phủ tự vẽ lại đúng hình đó); ẩn TRƯỚC khi chụp icon
     // để ảnh chụp không dính vòng (có vòng thì phải chờ cập nhật màn hình mới chụp được trạng thái mới).
     BOOL hadRing = LGRingHide(self.sources, YES);
-    // nút đang được nhấn thì bị làm mờ / sáng lên tạm: ảnh chụp phải là nút ở trạng thái BÌNH THƯỜNG (đúng như nút thật được trả lại lúc đóng xong),
-    // không thì lúc đóng icon nhìn nhạt rồi "nhảy" sang đen khi nút thật hiện lại.
-    BOOL prep = NO;
+    // icon các nút nguồn: chụp trước khi ẩn
     for (UIView *v in self.sources) {
-        BOOL pressed = [v isKindOfClass:UIControl.class] && ((UIControl *)v).highlighted;
-        if (pressed || (v.alpha > 0.001 && v.alpha < 0.999)) {
-            [v.layer removeAllAnimations];
-            if (pressed) ((UIControl *)v).highlighted = NO;
-            v.alpha = pressed || v.alpha < 0.05 ? 1.0 : v.alpha;
-            prep = YES;
-        }
-    }
-    // icon các nút nguồn: chụp trước khi ẩn. Icon nằm TRÊN CÙNG (trên kính, không bị mặt nạ khối cắt): khối nước luôn ở dưới nút.
-    for (UIView *v in self.sources) {
-        UIView *s = [v snapshotViewAfterScreenUpdates:(hadRing || prep)];
+        UIView *s = [v snapshotViewAfterScreenUpdates:hadRing];
         if (s) {
             s.frame = CGRectOffset(LGWinRect(v), -_R.origin.x, -_R.origin.y);
-            [self.reg addSubview:s];
+            [self.clip addSubview:s];
             [self.iconSnaps addObject:s];
         }
     }
@@ -597,12 +558,8 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
 
     // icon của nút đi theo khối, trôi về phía nút theo bề cao (bản mẫu: -0,35 * (cao - cao nút); menu bung lên thì ngược lại)
     double dy = (_geom.ay ? 0.35 : -0.35) * fmax(0, f->rect.h - _src.size.height);
-    // pha mở: icon đi theo khối; pha đóng (pin = 1): icon đứng yên tại nút (KHÔNG xoay), nhỏ, hơi nghiêng về phía khối nước, rồi nảy phồng lên
-    // bằng lò xo khi hợp nhất (btn). Phần "méo như giọt nước" của nút do đĩa kính phía sau đảm nhiệm (xem LGDropPath).
-    double fx = 1 - f->pin;
-    CGAffineTransform tr = CGAffineTransformMakeScale((CGFloat)f->btn, (CGFloat)f->btn);
-    tr = CGAffineTransformConcat(tr, CGAffineTransformMakeTranslation((CGFloat)(fx * (lgtl_cx(f->rect) - CGRectGetMidX(_src)) + f->bx),
-                                                                      (CGFloat)(fx * (lgtl_cy(f->rect) - CGRectGetMidY(_src) + dy) + f->by)));
+    CGAffineTransform tr = CGAffineTransformMakeTranslation((CGFloat)(lgtl_cx(f->rect) - CGRectGetMidX(_src)),
+                                                            (CGFloat)(lgtl_cy(f->rect) - CGRectGetMidY(_src) + dy));
     for (UIView *s in self.iconSnaps) {
         s.transform = tr;
         s.alpha = (CGFloat)f->dots;
@@ -618,23 +575,16 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
     self.fx.hidden = YES;
     self.tintL.hidden = YES;
     self.rimL.hidden = YES;
-    BOOL blobOn = f->rect.w >= 2 && f->rect.h >= 2;
-    BOOL dropOn = f->dr >= 0.5;
-    g.hidden = !(blobOn || dropOn);
+    CGRect r = CGRectMake(f->rect.x - _R.origin.x, f->rect.y - _R.origin.y, f->rect.w, f->rect.h);
+    BOOL on = r.size.width >= 2 && r.size.height >= 2;
+    g.hidden = !on;
     g.alpha = (CGFloat)f->alpha;
-    if (g.hidden) return;
-    // hộp kính = bao của khối nước và giọt nước của nút (pha đóng); mặt nạ = hợp hai hình
-    CGRect U = blobOn ? CGRectMake(f->rect.x, f->rect.y, f->rect.w, f->rect.h) : CGRectNull;
-    if (dropOn) U = CGRectUnion(U, CGRectMake(f->dcx - f->dr - f->dL, f->dcy - f->dr - f->dL, 2 * (f->dr + f->dL), 2 * (f->dr + f->dL)));
-    U = CGRectInset(U, -2, -2);
-    g.frame = CGRectOffset(U, -_R.origin.x, -_R.origin.y);
-    NSMutableArray *paths = [NSMutableArray new];
-    CGPathRef bp = NULL, dp = NULL;
-    if (blobOn) { bp = LGMorphPath(&_geom, f, U.origin); [paths addObject:(__bridge id)bp]; }
-    if (dropOn) { dp = LGDropPath(f, U.origin); [paths addObject:(__bridge id)dp]; }
-    [g setShapePaths:paths];
-    if (bp) CGPathRelease(bp);
-    if (dp) CGPathRelease(dp);
+    if (on) {
+        g.frame = r;
+        CGPathRef gp = LGMorphPath(&_geom, f, CGPointMake(f->rect.x, f->rect.y));
+        [g setShapePath:gp];
+        CGPathRelease(gp);
+    }
 }
 
 // Gán đường viền cho mọi lớp tạo nên khối (gọi bên trong CATransaction đã tắt action). a = độ đặc của khối.
@@ -845,33 +795,11 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
         _off = (LGMorphOff){ 0, 0, 0, 0 };
     }
     _tc = 0;
-    [self refreshIconSnaps];
     [self renderCloseAt:0];
     LGOverlayShow(self.ow);
     self.body.hidden = YES;      // (menu thật đang bị hệ thống đóng, lớp phủ của ta thay thế nó)
     self.state = LGStClosing;
     _lastT = CACurrentMediaTime();
-}
-
-// Chụp lại icon các nút ĐÚNG như nút thật sẽ hiện khi đóng xong (alpha đã khôi phục, không còn mờ do hệ thống làm mờ nút khi menu mở).
-// Ảnh chụp lúc bắt đầu mở bị mờ, nên lúc đóng icon nhìn nhạt rồi "nhảy" sang đen khi nút thật hiện lại.
-- (void)refreshIconSnaps {
-    if (!LGP.hideSource || self.sources.count == 0) return;
-    NSMutableArray<UIView *> *fresh = [NSMutableArray new];
-    for (NSUInteger i = 0; i < self.sources.count; i++) {
-        UIView *v = self.sources[i];
-        double a = i < self.srcAlpha.count ? self.srcAlpha[i].doubleValue : 1.0;
-        [v.layer removeAllAnimations];
-        v.alpha = (CGFloat)a;
-        UIView *ns = [v snapshotViewAfterScreenUpdates:YES];
-        v.alpha = 0;
-        if (!ns) return;
-        ns.frame = CGRectOffset(LGWinRect(v), -_R.origin.x, -_R.origin.y);
-        [fresh addObject:ns];
-    }
-    for (UIView *o in self.iconSnaps) [o removeFromSuperview];
-    [self.iconSnaps removeAllObjects];
-    for (UIView *ns in fresh) { ns.alpha = 0; [self.reg addSubview:ns]; [self.iconSnaps addObject:ns]; }
 }
 
 // Hết animation đóng (khối đã về đúng nút): trả nút thật.
