@@ -582,7 +582,9 @@ static NSMapTable<UITouch *, NSNumber *> *gTouches;   // chạm -> bắt đầu 
     if (on) {
         g.frame = r;
         CGPathRef gp = LGMorphPath(&_geom, f, CGPointMake(f->rect.x, f->rect.y));
-        [g setShapePath:gp];
+        LGRadii rr = LGMorphRadii(&_geom, f);
+        CGFloat minR = (CGFloat)fmin(fmin(rr.tlx, rr.trx), fmin(rr.brx, rr.blx));
+        [g setShapePaths:@[ (__bridge id)gp ] cornerRadius:minR];
         CGPathRelease(gp);
     }
 }
