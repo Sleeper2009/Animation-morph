@@ -32,10 +32,34 @@ static UIView *LGMakeMaterial(void) {
     }
 }
 
+int LGGlassMaskMode = 0;
+
+// Một "mặt nạ hợp hình": lớp gốc + các lớp CAShapeLayer con (mỗi hình một lớp, vùng nhìn thấy = hợp các hình).
+@interface LGMaskSet : NSObject
+@property (nonatomic, strong) CALayer *root;
+@property (nonatomic, strong) NSMutableArray<CAShapeLayer *> *parts;
+@end
+@implementation LGMaskSet
+- (instancetype)init { if ((self = [super init])) { _root = [CALayer layer]; _parts = [NSMutableArray new]; } return self; }
+- (void)applyPaths:(NSArray *)paths bounds:(CGRect)b {
+    _root.frame = b;
+    while (_parts.count < paths.count) {
+        CAShapeLayer *l = [CAShapeLayer layer];
+        l.fillColor = UIColor.blackColor.CGColor;
+        [_root addSublayer:l];
+        [_parts addObject:l];
+    }
+    for (NSUInteger i = 0; i < _parts.count; i++) {
+        _parts[i].frame = _root.bounds;
+        _parts[i].path = i < paths.count ? (__bridge CGPathRef)paths[i] : NULL;
+    }
+}
+@end
+
 @implementation LMGlassHost {
     UIView *_material;
-    CALayer *_maskRoot;                         // mặt nạ = hợp của các lớp hình con
-    NSMutableArray<CAShapeLayer *> *_parts;
+    LGMaskSet *_hostMask;       // mặt nạ đặt trên CHÍNH hộp (cắt mọi thứ nằm trong hộp, kể cả lớp kính do tweak Liquid (Gl)ass thêm vào)
+    LGMaskSet *_matMask;        // mặt nạ đặt trên MTMaterialView
 }
 - (UIView *)material { return _material; }
 
@@ -56,30 +80,29 @@ static UIView *LGMakeMaterial(void) {
 
 - (void)setShapePath:(CGPathRef)path {
     if (!path) return;
-    [self setShapePaths:@[ (__bridge id)path ]];
+    [self setShapePaths:@[ (__bridge id)path ] cornerRadius:0];
 }
 
-- (void)setShapePaths:(NSArray *)paths {
+- (void)setShapePaths:(NSArray *)paths { [self setShapePaths:paths cornerRadius:0]; }
+
+// Chế độ mặt nạ (LGGlassMaskMode): 0 = cả hộp lẫn MTMaterialView (mặc định), 1 = chỉ MTMaterialView, 2 = chỉ hộp.
+// Lý do có cả hai: tweak Liquid (Gl)ass thay / thêm lớp kính riêng, mặt nạ chỉ đặt trên MTMaterialView không cắt được nó -> kính hiện thành
+// HÌNH CHỮ NHẬT góc vuông; mặt nạ trên hộp cắt mọi thứ bên trong. cornerRadius = bo góc nhỏ nhất của khối (>0): đặt làm cornerRadius của lớp
+// MTMaterialView để tweak kính nào đọc cornerRadius của view cũng ra đúng độ cong (nhỏ nhất nên không cắt mất phần mặt nạ cho phép).
+- (void)setShapePaths:(NSArray *)paths cornerRadius:(CGFloat)cr {
     if (!_material) return;
-    if (!_maskRoot) {
-        _maskRoot = [CALayer layer];
-        _parts = [NSMutableArray new];
-        _material.layer.mask = _maskRoot;
-    }
+    int mode = LGGlassMaskMode;
+    BOOL onHost = mode != 1, onMat = mode != 2;
+    if (onHost && !_hostMask) { _hostMask = [LGMaskSet new]; self.layer.mask = _hostMask.root; }
+    if (onMat && !_matMask) { _matMask = [LGMaskSet new]; _material.layer.mask = _matMask.root; }
+    if (!onHost && _hostMask) { self.layer.mask = nil; _hostMask = nil; }
+    if (!onMat && _matMask) { _material.layer.mask = nil; _matMask = nil; }
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
-    _maskRoot.frame = self.bounds;
-    while (_parts.count < paths.count) {
-        CAShapeLayer *l = [CAShapeLayer layer];
-        l.fillColor = UIColor.blackColor.CGColor;
-        [_maskRoot addSublayer:l];
-        [_parts addObject:l];
-    }
-    for (NSUInteger i = 0; i < _parts.count; i++) {
-        CAShapeLayer *l = _parts[i];
-        l.frame = _maskRoot.bounds;
-        l.path = i < paths.count ? (__bridge CGPathRef)paths[i] : NULL;
-    }
+    [_hostMask applyPaths:paths bounds:self.bounds];
+    [_matMask applyPaths:paths bounds:_material.bounds];
+    _material.layer.cornerRadius = cr > 0 ? cr : 0;
+    if (@available(iOS 13.0, *)) _material.layer.cornerCurve = kCACornerCurveContinuous;
     [CATransaction commit];
 }
 
@@ -88,8 +111,10 @@ static UIView *LGMakeMaterial(void) {
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
     _material.frame = self.bounds;
-    _maskRoot.frame = self.bounds;
-    for (CAShapeLayer *l in _parts) l.frame = _maskRoot.bounds;
+    _hostMask.root.frame = self.bounds;
+    _matMask.root.frame = _material.bounds;
+    for (CAShapeLayer *l in _hostMask.parts) l.frame = _hostMask.root.bounds;
+    for (CAShapeLayer *l in _matMask.parts) l.frame = _matMask.root.bounds;
     [CATransaction commit];
 }
 
