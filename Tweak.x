@@ -4,6 +4,7 @@
 #import "LGMenuMorph.h"
 #import "LGLog.h"
 #import "LGRing.h"
+#import "LGGlass.h"
 
 // Cài đặt: domain CFPreferences do bảng Cài đặt (LiquidMenuPrefs) ghi; file plist cùng tên vẫn đọc được để chỉnh tay (khoá nâng cao như speed, closeDur, hints...).
 #define kDomain @"com.fujb-2009.liquidmenu"
@@ -336,6 +337,7 @@ static void LGApplyPrefs(NSDictionary *p) {
     if ([p[@"material"] respondsToSelector:@selector(intValue)]) LGP.material = [p[@"material"] intValue];
     if ([p[@"overlayMode"] respondsToSelector:@selector(intValue)]) LGP.overlayMode = [p[@"overlayMode"] intValue];
     LGP.useGlass = LGBoolOf(p[@"useGlass"], LGP.useGlass);
+    if ([p[@"glassMask"] respondsToSelector:@selector(intValue)]) { int m = [p[@"glassMask"] intValue]; LGGlassMaskMode = (m >= 0 && m <= 2) ? m : 0; }
     LGP.coverButton = LGBoolOf(p[@"coverButton"], LGP.coverButton);
     LGP.hideSource = LGBoolOf(p[@"hideSource"], LGP.hideSource);
     LGP.groupButtons = LGBoolOf(p[@"groupButtons"], LGP.groupButtons);
