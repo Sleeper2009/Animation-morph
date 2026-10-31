@@ -13,7 +13,12 @@
 - (void)setShapePath:(CGPathRef)path;
 /// Nhiều hình hợp lại (hợp của các path, mỗi path là một CGPathRef bọc trong id bằng (__bridge id)); dùng cho khối nước + giọt nút lúc hút nhau.
 - (void)setShapePaths:(NSArray *)paths;
+/// Như trên, kèm bo góc nhỏ nhất của khối (đặt làm cornerRadius của MTMaterialView cho tweak kính nào đọc cornerRadius). 0 = không đặt.
+- (void)setShapePaths:(NSArray *)paths cornerRadius:(CGFloat)cr;
 @end
+
+/// 0 = mặt nạ trên cả hộp lẫn MTMaterialView (mặc định), 1 = chỉ MTMaterialView, 2 = chỉ hộp. Đặt từ plist tuỳ chọn (khoá glassMask) để thử không cần build lại.
+extern int LGGlassMaskMode;
 
 /// Lấy hộp kính dùng lại (dựng một lần cho cả tiến trình). nil nếu không có MTMaterialView.
 LMGlassHost *LGGlassAcquire(void);
