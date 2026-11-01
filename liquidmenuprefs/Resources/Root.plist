@@ -60,7 +60,7 @@ Ancestor Class = LMGlassHost</string>
 			<key>cell</key>
 			<string>PSSliderCell</string>
 			<key>default</key>
-			<real>0.65</real>
+			<real>0.8</real>
 			<key>defaults</key>
 			<string>com.fujb-2009.liquidmenu</string>
 			<key>isSegmented</key>
@@ -68,11 +68,11 @@ Ancestor Class = LMGlassHost</string>
 			<key>key</key>
 			<string>speed</string>
 			<key>max</key>
-			<real>0.8</real>
+			<real>1.0</real>
 			<key>min</key>
 			<real>0.5</real>
 			<key>segmentCount</key>
-			<integer>6</integer>
+			<integer>10</integer>
 			<key>showValue</key>
 			<true/>
 		</dict>
@@ -80,77 +80,17 @@ Ancestor Class = LMGlassHost</string>
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>label</key>
-			<string>Tính năng thử nghiệm</string>
+			<string></string>
 		</dict>
 		<dict>
-			<key>PostNotification</key>
-			<string>com.fujb-2009.liquidmenu/reload</string>
 			<key>cell</key>
-			<string>PSSwitchCell</string>
-			<key>default</key>
+			<string>PSLinkCell</string>
+			<key>detail</key>
+			<string>LMExperimentalListController</string>
+			<key>isController</key>
 			<true/>
-			<key>defaults</key>
-			<string>com.fujb-2009.liquidmenu</string>
-			<key>key</key>
-			<string>ring</string>
 			<key>label</key>
-			<string>Vòng quanh nút</string>
-		</dict>
-		<dict>
-			<key>PostNotification</key>
-			<string>com.fujb-2009.liquidmenu/reload</string>
-			<key>cell</key>
-			<string>PSSwitchCell</string>
-			<key>default</key>
-			<true/>
-			<key>defaults</key>
-			<string>com.fujb-2009.liquidmenu</string>
-			<key>key</key>
-			<string>ringBack</string>
-			<key>label</key>
-			<string>Vòng quanh nút Quay lại</string>
-		</dict>
-		<dict>
-			<key>PostNotification</key>
-			<string>com.fujb-2009.liquidmenu/reload</string>
-			<key>cell</key>
-			<string>PSSwitchCell</string>
-			<key>default</key>
-			<true/>
-			<key>defaults</key>
-			<string>com.fujb-2009.liquidmenu</string>
-			<key>key</key>
-			<string>flash</string>
-			<key>label</key>
-			<string>Lóe sáng</string>
-		</dict>
-		<dict>
-			<key>PostNotification</key>
-			<string>com.fujb-2009.liquidmenu/reload</string>
-			<key>cell</key>
-			<string>PSSwitchCell</string>
-			<key>default</key>
-			<true/>
-			<key>defaults</key>
-			<string>com.fujb-2009.liquidmenu</string>
-			<key>key</key>
-			<string>zoom</string>
-			<key>label</key>
-			<string>Phóng to</string>
-		</dict>
-		<dict>
-			<key>PostNotification</key>
-			<string>com.fujb-2009.liquidmenu/reload</string>
-			<key>cell</key>
-			<string>PSSwitchCell</string>
-			<key>default</key>
-			<true/>
-			<key>defaults</key>
-			<string>com.fujb-2009.liquidmenu</string>
-			<key>key</key>
-			<string>groupButtons</string>
-			<key>label</key>
-			<string>Gộp nút liền nhau</string>
+			<string>Tính Năng Thử Nghiệm</string>
 		</dict>
 		<dict>
 			<key>cell</key>
