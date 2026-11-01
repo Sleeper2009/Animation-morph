@@ -114,6 +114,26 @@
 			<key>label</key>
 			<string>Nút IOS 26</string>
 		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>footerText</key>
+			<string>Nút bàn phím kiểu IOS 26</string>
+		</dict>
+		<dict>
+			<key>PostNotification</key>
+			<string>com.fujb-2009.liquidmenu/reload</string>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>default</key>
+			<true/>
+			<key>defaults</key>
+			<string>com.fujb-2009.liquidmenu</string>
+			<key>key</key>
+			<string>keyboardButton</string>
+			<key>label</key>
+			<string>Nút bàn phím 26</string>
+		</dict>
 	</array>
 	<key>title</key>
 	<string>Tính Năng Thử Nghiệm</string>
