@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>items</key>
+	<array>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
+			<string>Vòng tròn quanh nút</string>
+		</dict>
+		<dict>
+			<key>PostNotification</key>
+			<string>com.fujb-2009.liquidmenu/reload</string>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>default</key>
+			<true/>
+			<key>defaults</key>
+			<string>com.fujb-2009.liquidmenu</string>
+			<key>key</key>
+			<string>ring</string>
+			<key>label</key>
+			<string>Vòng quanh nút</string>
+		</dict>
+		<dict>
+			<key>PostNotification</key>
+			<string>com.fujb-2009.liquidmenu/reload</string>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>default</key>
+			<true/>
+			<key>defaults</key>
+			<string>com.fujb-2009.liquidmenu</string>
+			<key>key</key>
+			<string>ringBack</string>
+			<key>label</key>
+			<string>Vòng quanh nút Quay lại</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
+			<string>Khi ấn nút</string>
+		</dict>
+		<dict>
+			<key>PostNotification</key>
+			<string>com.fujb-2009.liquidmenu/reload</string>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>default</key>
+			<true/>
+			<key>defaults</key>
+			<string>com.fujb-2009.liquidmenu</string>
+			<key>key</key>
+			<string>flash</string>
+			<key>label</key>
+			<string>Lóe sáng</string>
+		</dict>
+		<dict>
+			<key>PostNotification</key>
+			<string>com.fujb-2009.liquidmenu/reload</string>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>default</key>
+			<true/>
+			<key>defaults</key>
+			<string>com.fujb-2009.liquidmenu</string>
+			<key>key</key>
+			<string>zoom</string>
+			<key>label</key>
+			<string>Phóng to</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
+			<string>Menu</string>
+		</dict>
+		<dict>
+			<key>PostNotification</key>
+			<string>com.fujb-2009.liquidmenu/reload</string>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>default</key>
+			<true/>
+			<key>defaults</key>
+			<string>com.fujb-2009.liquidmenu</string>
+			<key>key</key>
+			<string>groupButtons</string>
+			<key>label</key>
+			<string>Gộp nút liền nhau</string>
+		</dict>
+	</array>
+	<key>title</key>
+	<string>Tính Năng Thử Nghiệm</string>
+</dict>
+</plist>
