@@ -96,7 +96,7 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>footerText</key>
-			<string>Nút tròn kiểu iOS 26: Hủy thành dấu X; Xong / Kết nối thành dấu ✓ (xám khi chưa bấm được, xanh khi bấm được). Áp dụng cho nút mới hiện sau khi đổi; mở lại màn hình để thấy.</string>
+			<string>Nút tròn kiểu IOS 26</string>
 			<key>label</key>
 			<string>Nút thanh điều hướng</string>
 		</dict>
@@ -110,23 +110,9 @@
 			<key>defaults</key>
 			<string>com.fujb-2009.liquidmenu</string>
 			<key>key</key>
-			<string>iconCancel</string>
+			<string>iosButtons</string>
 			<key>label</key>
-			<string>Nút Hủy thành dấu X</string>
-		</dict>
-		<dict>
-			<key>PostNotification</key>
-			<string>com.fujb-2009.liquidmenu/reload</string>
-			<key>cell</key>
-			<string>PSSwitchCell</string>
-			<key>default</key>
-			<true/>
-			<key>defaults</key>
-			<string>com.fujb-2009.liquidmenu</string>
-			<key>key</key>
-			<string>iconDone</string>
-			<key>label</key>
-			<string>Nút Xong / Kết nối thành dấu ✓</string>
+			<string>Nút IOS 26</string>
 		</dict>
 	</array>
 	<key>title</key>
