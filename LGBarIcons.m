@@ -117,9 +117,24 @@ static NSString *LGDefaultLabel(LGBarIconKind kind) {
     return kind == LGBarIconCancel ? @"Hủy" : @"Xong";
 }
 
+// Chữ nút đã đổi sang chữ khác loại (vd "Xong" -> "Sửa" khi thoát chế độ sửa): gỡ ảnh, trả lại nút chữ.
+static void LGBarIconReset(UIBarButtonItem *item) {
+    NSString *lab = objc_getAssociatedObject(item, kLabelKey);
+    if (lab && [item.accessibilityLabel isEqualToString:lab]) item.accessibilityLabel = nil;
+    objc_setAssociatedObject(item, kKindKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    objc_setAssociatedObject(item, kStateKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    objc_setAssociatedObject(item, kLabelKey, nil, OBJC_ASSOCIATION_COPY_NONATOMIC);
+    item.image = nil;
+    LGLog(@"nút biểu tượng: trả lại nút chữ '%@'", item.title ?: @"");
+}
+
 void LGBarIconApply(UIBarButtonItem *item) {
     if (!item) return;
     NSNumber *k = objc_getAssociatedObject(item, kKindKey);
+    if (k && item.title.length && LGBarIconKindForTitle(item.title) != (LGBarIconKind)k.integerValue) {
+        LGBarIconReset(item);      // nút đổi chữ (Sửa <-> Xong...): bỏ loại cũ rồi nhận lại theo chữ mới
+        k = nil;
+    }
     LGBarIconKind kind = k ? (LGBarIconKind)k.integerValue : LGBarIconKindForTitle(item.title);
     if (kind == LGBarIconNone || !LGBarIconWanted(kind)) return;
     if (!k) LGBarIconSetKind(item, kind);
