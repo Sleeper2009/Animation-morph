@@ -8,7 +8,7 @@
 #include "LGPlan.h"
 #include "LGTimeline.h"
 
-LGParams LGP = { .closeDur = LGMORPH_CLOSE_T, .speed = 0.65,
+LGParams LGP = { .closeDur = LGMORPH_CLOSE_T, .speed = 0.8,
                  .tint = 0.12, .shadow = 0.18, .rim = 0.14, .material = -1,
                  .ring = YES, .ringAll = NO,
                  .pressScale = 1.30, .pressOmega = 34.0, .pressZeta = 0.55, .pressFlash = 1.0, .pressHold = 0.12, .press = YES, .pressFlashOn = YES, .pressZoomOn = YES, .ringMargin = 8.0, .ringPadX = 12.0, .ringBack = YES, .fallbackAnim = YES, .groupGap = 16.0, .overlayMode = 0, .glass = NO,
@@ -31,7 +31,7 @@ void LGParamsFinalize(void) {
     LGP.ringPadX = fmin(fmax(LGP.ringPadX, 0.0), 30.0);
     LGP.groupGap = fmin(fmax(LGP.groupGap, 0.0), 60.0);
     if (LGP.overlayMode < 0 || LGP.overlayMode > 2) LGP.overlayMode = 0;
-    LGP.speed = fmin(fmax(LGP.speed, 0.5), 0.8);
+    LGP.speed = fmin(fmax(LGP.speed, 0.5), 1.0);
     if (LGP.material < -1) LGP.material = -1;
     if (LGP.material > 4) LGP.material = 4;
 }
