@@ -6,6 +6,7 @@
 #import "LGRing.h"
 #import "LGGlass.h"
 #import "LGBarIcons.h"
+#import "LGKeyboard.h"
 
 // Cài đặt: domain CFPreferences do bảng Cài đặt (LiquidMenuPrefs) ghi; file plist cùng tên vẫn đọc được để chỉnh tay (khoá nâng cao như speed, closeDur, hints...).
 #define kDomain @"com.fujb-2009.liquidmenu"
@@ -392,6 +393,8 @@ static void LGApplyPrefs(NSDictionary *p) {
     LGP.fallbackAnim = LGBoolOf(p[@"fallbackAnim"], LGP.fallbackAnim);
     LGP.glass = LGBoolOf(p[@"glass"], LGP.glass);
     LGP.iconCancel = LGP.iconDone = LGBoolOf(p[@"iosButtons"], YES);   // một công tắc "Nút IOS 26"
+    LGP.kbButton = LGBoolOf(p[@"keyboardButton"], YES);
+    LGKeyboardSetEnabled(gEnabled && LGP.kbButton);     // nút bàn phím kiểu IOS 26 (bật / tắt ngay, kể cả khi bàn phím đang hiện)
     // Log chỉ ghi khi có sự kiện menu. Dump cây view/class (nặng) mặc định chỉ bật ở Ghi chú; app khác muốn dump thì đặt dump = true.
     LGP.dump = LGBoolOf(p[@"dump"], gIsNotes);
     LGP.debug = LGBoolOf(p[@"debug"], LGP.debug);
