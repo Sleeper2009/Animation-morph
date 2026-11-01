@@ -5,7 +5,7 @@ include $(THEOS)/makefiles/common.mk
 
 BUNDLE_NAME = LiquidMenuPrefs
 
-LiquidMenuPrefs_FILES = LMRootListController.m LMAppsListController.m
+LiquidMenuPrefs_FILES = LMRootListController.m LMAppsListController.m LMExperimentalListController.m
 LiquidMenuPrefs_FRAMEWORKS = UIKit
 LiquidMenuPrefs_INSTALL_PATH = /Library/PreferenceBundles
 LiquidMenuPrefs_CFLAGS = -fobjc-arc -Wno-deprecated-declarations
