@@ -5,6 +5,7 @@
 #import "LGLog.h"
 #import "LGRing.h"
 #import "LGGlass.h"
+#import "LGBarIcons.h"
 
 // Cài đặt: domain CFPreferences do bảng Cài đặt (LiquidMenuPrefs) ghi; file plist cùng tên vẫn đọc được để chỉnh tay (khoá nâng cao như speed, closeDur, hints...).
 #define kDomain @"com.fujb-2009.liquidmenu"
@@ -220,6 +221,38 @@ static void LGHandle(UIView *container, int attempt) {
 
 %group LGMain
 
+// ---- Nút thanh điều hướng kiểu iOS 26 (Hủy -> X, Xong / Kết nối -> ✓ xám / xanh). Chi tiết ở LGBarIcons.m.
+%hook UIBarButtonItem
+- (instancetype)initWithTitle:(NSString *)title style:(UIBarButtonItemStyle)style target:(id)target action:(SEL)action {
+    self = %orig;
+    if (self && gEnabled) LGBarIconApply(self);
+    return self;
+}
+// Nút hệ thống Done / Cancel không có chữ để đổi: tạo lại thành nút ảnh (giữ target / action).
+- (instancetype)initWithBarButtonSystemItem:(UIBarButtonSystemItem)si target:(id)target action:(SEL)action {
+    if (gEnabled) {
+        LGBarIconKind k = si == UIBarButtonSystemItemDone ? LGBarIconDone : (si == UIBarButtonSystemItemCancel ? LGBarIconCancel : LGBarIconNone);
+        if (k != LGBarIconNone && LGBarIconWanted(k)) {
+            self = [self initWithImage:LGBarIconImage(k, YES) style:UIBarButtonItemStylePlain target:target action:action];
+            if (self) {
+                LGBarIconSetKind(self, k);
+                self.accessibilityLabel = k == LGBarIconCancel ? @"Hủy" : @"Xong";
+            }
+            return self;
+        }
+    }
+    return %orig;
+}
+- (void)setTitle:(NSString *)title {
+    %orig;
+    if (gEnabled) LGBarIconApply(self);
+}
+- (void)setEnabled:(BOOL)enabled {
+    %orig;
+    if (gEnabled) LGBarIconApply(self);
+}
+%end
+
 %hook UIApplication
 - (void)sendEvent:(UIEvent *)e {
     if (gEnabled && e.type == UIEventTypeTouches) {
@@ -351,6 +384,8 @@ static void LGApplyPrefs(NSDictionary *p) {
     LGP.ringBack = LGBoolOf(p[@"ringBack"], LGP.ringBack);
     LGP.fallbackAnim = LGBoolOf(p[@"fallbackAnim"], LGP.fallbackAnim);
     LGP.glass = LGBoolOf(p[@"glass"], LGP.glass);
+    LGP.iconCancel = LGBoolOf(p[@"iconCancel"], YES);
+    LGP.iconDone = LGBoolOf(p[@"iconDone"], YES);
     // Log chỉ ghi khi có sự kiện menu. Dump cây view/class (nặng) mặc định chỉ bật ở Ghi chú; app khác muốn dump thì đặt dump = true.
     LGP.dump = LGBoolOf(p[@"dump"], gIsNotes);
     LGP.debug = LGBoolOf(p[@"debug"], LGP.debug);
