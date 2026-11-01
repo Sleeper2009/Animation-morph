@@ -13,7 +13,7 @@ LGParams LGP = { .closeDur = LGMORPH_CLOSE_T, .speed = 0.8,
                  .ring = YES, .ringAll = NO,
                  .pressScale = 1.30, .pressOmega = 34.0, .pressZeta = 0.55, .pressFlash = 1.0, .pressHold = 0.12, .press = YES, .pressFlashOn = YES, .pressZoomOn = YES, .ringMargin = 8.0, .ringPadX = 12.0, .ringBack = YES, .fallbackAnim = YES, .groupGap = 16.0, .overlayMode = 0, .glass = NO,
                  .useGlass = YES, .debug = YES, .coverButton = YES, .hideSource = YES, .groupButtons = YES,
-                 .blurText = YES, .closeAnim = YES, .dump = YES };
+                 .blurText = YES, .closeAnim = YES, .dump = YES, .iconCancel = YES, .iconDone = YES };
 
 // fmax/fmin trả về đối số không-NaN nên NaN (plist hỏng) cũng bị đẩy về cận.
 void LGParamsFinalize(void) {
