@@ -28,9 +28,11 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>footerText</key>
-			<string>Menu mở bằng hai viên kính (thân menu và nút) thay cho lớp mờ. Muốn kính kiểu iOS 26 cần tweak Liquid (Gl)ass với luật Target Class = MTMaterialView, Ancestor Class = LMGlassHost; không có thì là kính mờ gốc của hệ thống.</string>
+			<string>Chỉ có tác dụng khi bật Liquid (Gl)ass
+Luật: Target Class = MTMaterialView
+Ancestor Class = LMGlassHost</string>
 			<key>label</key>
-			<string>Kính</string>
+			<string>Liquid Glass</string>
 		</dict>
 		<dict>
 			<key>PostNotification</key>
@@ -44,7 +46,7 @@
 			<key>key</key>
 			<string>glass</string>
 			<key>label</key>
-			<string>Kính Liquid Glass</string>
+			<string>Sử dụng Liquid Glass cho animation</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -58,15 +60,19 @@
 			<key>cell</key>
 			<string>PSSliderCell</string>
 			<key>default</key>
-			<real>1.0</real>
+			<real>0.65</real>
 			<key>defaults</key>
 			<string>com.fujb-2009.liquidmenu</string>
+			<key>isSegmented</key>
+			<true/>
 			<key>key</key>
 			<string>speed</string>
 			<key>max</key>
-			<real>2.0</real>
+			<real>0.8</real>
 			<key>min</key>
 			<real>0.5</real>
+			<key>segmentCount</key>
+			<integer>6</integer>
 			<key>showValue</key>
 			<true/>
 		</dict>
@@ -74,7 +80,7 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>label</key>
-			<string>Vòng tròn quanh nút</string>
+			<string>Tính năng thử nghiệm</string>
 		</dict>
 		<dict>
 			<key>PostNotification</key>
@@ -105,12 +111,6 @@
 			<string>Vòng quanh nút Quay lại</string>
 		</dict>
 		<dict>
-			<key>cell</key>
-			<string>PSGroupCell</string>
-			<key>label</key>
-			<string>Khi ấn nút</string>
-		</dict>
-		<dict>
 			<key>PostNotification</key>
 			<string>com.fujb-2009.liquidmenu/reload</string>
 			<key>cell</key>
@@ -139,12 +139,6 @@
 			<string>Phóng to</string>
 		</dict>
 		<dict>
-			<key>cell</key>
-			<string>PSGroupCell</string>
-			<key>label</key>
-			<string>Menu</string>
-		</dict>
-		<dict>
 			<key>PostNotification</key>
 			<string>com.fujb-2009.liquidmenu/reload</string>
 			<key>cell</key>
@@ -157,20 +151,6 @@
 			<string>groupButtons</string>
 			<key>label</key>
 			<string>Gộp nút liền nhau</string>
-		</dict>
-		<dict>
-			<key>PostNotification</key>
-			<string>com.fujb-2009.liquidmenu/reload</string>
-			<key>cell</key>
-			<string>PSSwitchCell</string>
-			<key>default</key>
-			<true/>
-			<key>defaults</key>
-			<string>com.fujb-2009.liquidmenu</string>
-			<key>key</key>
-			<string>fallbackAnim</string>
-			<key>label</key>
-			<string>Animation dự phòng</string>
 		</dict>
 		<dict>
 			<key>cell</key>
