@@ -17,6 +17,7 @@ typedef struct {
     BOOL fallbackAnim;                          // menu không morph được -> chạy animation đơn giản thay vì hiện cái bụp
     double groupGap;                            // gộp các nút thành một viên thuốc khi khoảng hở giữa phần NHÌN THẤY <= giá trị này (pt)
     BOOL glass;                                 // kính Liquid Glass (MTMaterialView + tweak Liquid (Gl)ass) thay cho lớp blur
+    BOOL iconCancel, iconDone;                  // nút thanh điều hướng kiểu iOS 26: Hủy -> X; Xong / Kết nối -> ✓ (xem LGBarIcons.h)
     int overlayMode;                            // 0 = tự chọn (extension -> view trong cửa sổ), 1 = UIWindow riêng, 2 = view trong cửa sổ
 } LGParams;
 
