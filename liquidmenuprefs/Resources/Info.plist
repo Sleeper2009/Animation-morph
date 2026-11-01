@@ -2,23 +2,114 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>CFBundleDevelopmentRegion</key>
-	<string>en</string>
-	<key>CFBundleExecutable</key>
-	<string>LiquidMenuPrefs</string>
-	<key>CFBundleIdentifier</key>
-	<string>com.fujb-2009.liquidmenuprefs</string>
-	<key>CFBundleInfoDictionaryVersion</key>
-	<string>6.0</string>
-	<key>CFBundleName</key>
-	<string>LiquidMenuPrefs</string>
-	<key>CFBundlePackageType</key>
-	<string>BNDL</string>
-	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
-	<key>CFBundleVersion</key>
-	<string>1</string>
-	<key>NSPrincipalClass</key>
-	<string>LMRootListController</string>
+	<key>items</key>
+	<array>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
+			<string>LiquidMenu</string>
+		</dict>
+		<dict>
+			<key>PostNotification</key>
+			<string>com.fujb-2009.liquidmenu/reload</string>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>default</key>
+			<true/>
+			<key>defaults</key>
+			<string>com.fujb-2009.liquidmenu</string>
+			<key>key</key>
+			<string>enabled</string>
+			<key>label</key>
+			<string>Bật LiquidMenu</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>footerText</key>
+			<string>Chỉ có tác dụng khi bật Liquid (Gl)ass
+Luật: Target Class = MTMaterialView
+Ancestor Class = LMGlassHost</string>
+			<key>label</key>
+			<string>Liquid Glass</string>
+		</dict>
+		<dict>
+			<key>PostNotification</key>
+			<string>com.fujb-2009.liquidmenu/reload</string>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>default</key>
+			<false/>
+			<key>defaults</key>
+			<string>com.fujb-2009.liquidmenu</string>
+			<key>key</key>
+			<string>glass</string>
+			<key>label</key>
+			<string>Sử dụng Liquid Glass cho animation</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
+			<string>Tốc độ animation</string>
+		</dict>
+		<dict>
+			<key>PostNotification</key>
+			<string>com.fujb-2009.liquidmenu/reload</string>
+			<key>cell</key>
+			<string>PSSliderCell</string>
+			<key>default</key>
+			<real>0.8</real>
+			<key>defaults</key>
+			<string>com.fujb-2009.liquidmenu</string>
+			<key>isSegmented</key>
+			<true/>
+			<key>key</key>
+			<string>speed</string>
+			<key>max</key>
+			<real>1.0</real>
+			<key>min</key>
+			<real>0.5</real>
+			<key>segmentCount</key>
+			<integer>10</integer>
+			<key>showValue</key>
+			<true/>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
+			<string></string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSLinkCell</string>
+			<key>detail</key>
+			<string>LMExperimentalListController</string>
+			<key>isController</key>
+			<true/>
+			<key>label</key>
+			<string>Tính Năng Thử Nghiệm</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
+			<string>Ứng dụng</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSLinkCell</string>
+			<key>detail</key>
+			<string>LMAppsListController</string>
+			<key>isController</key>
+			<true/>
+			<key>label</key>
+			<string>Loại trừ ứng dụng</string>
+		</dict>
+	</array>
+	<key>title</key>
+	<string>LiquidMenu</string>
 </dict>
 </plist>
