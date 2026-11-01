@@ -279,6 +279,13 @@ static void LGHandle(UIView *container, int attempt) {
     if (gEnabled && [LGMenuMorph isActive]) [LGMenuMorph modalPresented];
     %orig;
 }
+// Vào / thoát chế độ sửa: nút Sửa <-> Xong đổi chữ, cập nhật lại ảnh (✓ chỉ khi đang là "Xong", trả lại chữ "Sửa" khi thoát).
+- (void)setEditing:(BOOL)editing animated:(BOOL)flag {
+    %orig;
+    if (!gEnabled || !self.isViewLoaded) return;
+    UINavigationItem *ni = self.navigationItem;
+    for (UIBarButtonItem *b in [(ni.leftBarButtonItems ?: @[]) arrayByAddingObjectsFromArray:(ni.rightBarButtonItems ?: @[])]) LGBarIconApply(b);
+}
 %end
 
 %hook UIView
