@@ -207,7 +207,9 @@ static CGRect LGReturnKeyRect(UIView *plane) {
                               NSStringFromCGRect(plane.bounds), kp ? NSStringFromClass([kp class]) : @"nil", (unsigned long)keys.count, (unsigned long)kviews.count];
         for (id k in keys) {
             NSValue *fv = LGKV(k, @"frame");
-            [s appendFormat:@"  tree name=%@ rep=%@ frame=%@\n", LGKV(k, @"name"), LGKV(k, @"representedString"), fv ? NSStringFromCGRect(fv.CGRectValue) : @"?"];
+            NSValue *pv = LGKV(k, @"paddedFrame");
+            [s appendFormat:@"  tree name=%@ rep=%@ disp=%@ type=%@ state=%@ frame=%@ padded=%@\n", LGKV(k, @"name"), LGKV(k, @"representedString"), LGKV(k, @"displayString"),
+             LGKV(k, @"displayType"), LGKV(k, @"state"), fv ? NSStringFromCGRect(fv.CGRectValue) : @"?", pv ? NSStringFromCGRect(pv.CGRectValue) : @"?"];
         }
         for (UIView *v in kviews)
             [s appendFormat:@"  view %s key=%@ frame=%@\n", object_getClassName(v), LGKV(v, @"key") ? LGKV(LGKV(v, @"key"), @"name") : @"?", NSStringFromCGRect([v convertRect:v.bounds toView:plane])];
@@ -261,13 +263,13 @@ static void LGTick(void) {
             return;
         }
         gIdle = 0;
-        // chỉ đổi những phím xanh (Search / Go / Send / Join / Route / Done / Continue...); Return / Next xám giữ nguyên
+        // đổi mọi phím Return, trừ phím Gọi khẩn cấp
         BOOL want = NO, en = YES;
         UIReturnKeyType rk = UIReturnKeyDefault;
         if ([r conformsToProtocol:@protocol(UITextInputTraits)]) {
             id<UITextInputTraits> t = (id<UITextInputTraits>)r;
             rk = [t respondsToSelector:@selector(returnKeyType)] ? t.returnKeyType : UIReturnKeyDefault;
-            want = rk != UIReturnKeyDefault && rk != UIReturnKeyNext && rk != UIReturnKeyEmergencyCall;
+            want = rk != UIReturnKeyEmergencyCall;      // mọi phím Return (Tìm / Đi / Gửi / Xong và cả "nhập" / "Tiếp" thường) -> nút xanh ↩
             if ([t respondsToSelector:@selector(enablesReturnKeyAutomatically)] && t.enablesReturnKeyAutomatically && [r conformsToProtocol:@protocol(UIKeyInput)])
                 en = ((id<UIKeyInput>)r).hasText;
         }
@@ -281,7 +283,7 @@ static void LGTick(void) {
         if (!gKey) gKey = [[LGKbKey alloc] initWithFrame:rect];
         if (gKey.superview != plane) [plane addSubview:gKey];
         else if (plane.subviews.lastObject != gKey) [plane bringSubviewToFront:gKey];
-        if (!CGRectEqualToRect(gKey.frame, rect)) gKey.frame = rect;
+        if (!CGRectEqualToRect(gKey.frame, rect)) { gKey.frame = rect; LGLog(@"nút bàn phím: phủ lên khung %@ (container %s %@)", NSStringFromCGRect(rect), object_getClassName(plane), NSStringFromCGRect(plane.bounds)); }
         [gKey setLook:en ? 1 : 0];
     } @catch (NSException *ex) {
         LGLog(@"NGOẠI LỆ nút bàn phím: %@ %@", ex.name, ex.reason);
